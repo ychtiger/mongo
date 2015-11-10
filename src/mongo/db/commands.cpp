@@ -123,7 +123,6 @@ MONGO_INITIALIZER(SetupForbiddenCommands)(InitializerContext* context) {
     forbiddenCommands.insert("driverOIDTest");
     forbiddenCommands.insert("connPoolStats");
     forbiddenCommands.insert("shardConnPoolStats");
-    forbiddenCommands.insert("getLog");
     forbiddenCommands.insert("diagLogging");
     forbiddenCommands.insert("getCmdLineOpts");
     forbiddenCommands.insert("netstat");
