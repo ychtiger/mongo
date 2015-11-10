@@ -175,6 +175,10 @@ ReplicationCoordinatorImpl::ReplicationCoordinatorImpl(
     SlaveInfo selfInfo;
     selfInfo.self = true;
     _slaveInfo.push_back(selfInfo);
+
+    Status status = setNetVip(_settings.netVip);
+    fassert(30002, status);
+
 }
 
 ReplicationCoordinatorImpl::~ReplicationCoordinatorImpl() {}
@@ -2148,6 +2152,30 @@ std::vector<HostAndPort> ReplicationCoordinatorImpl::getOtherNodesInReplSet() co
         nodes.push_back(_rsConfig.getMemberAt(i).getHostAndPort());
     }
     return nodes;
+}
+
+Status ReplicationCoordinatorImpl::setNetVip(const std::vector<std::string> &netVipString) {
+    std::vector<HostAndPort> netVip;
+    for (size_t i = 0; i < netVipString.size(); ++i) {
+        HostAndPort hp(netVipString[i]);
+        if (!hp.hasPort()) {
+            return Status(ErrorCodes::FailedToParse,
+                    "must specifically port");
+        }
+        netVip.push_back(hp);
+    }
+    setNetVip(netVip);
+    return Status::OK();
+}
+
+void ReplicationCoordinatorImpl::setNetVip(const std::vector<HostAndPort> &netVip) {
+    boost::lock_guard<boost::mutex> lock(_netVipMutex);
+    _netVip = netVip;
+}
+
+std::vector<HostAndPort> ReplicationCoordinatorImpl::getNetVip() const {
+    boost::lock_guard<boost::mutex> lock(_netVipMutex);
+    return _netVip;
 }
 
 Status ReplicationCoordinatorImpl::checkIfWriteConcernCanBeSatisfied(

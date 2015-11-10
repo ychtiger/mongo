@@ -34,6 +34,7 @@
 
 #include <boost/scoped_ptr.hpp>
 
+#include "mongo/db/auth/sasl_authentication_session.h"
 #include "mongo/db/commands.h"
 #include "mongo/db/concurrency/write_conflict_exception.h"
 #include "mongo/db/dbhelpers.h"
@@ -92,6 +93,12 @@ public:
         Status allowedWriteStatus = userAllowedWriteNS(ns);
         if (!allowedWriteStatus.isOK()) {
             return appendCommandStatus(result, allowedWriteStatus);
+        }
+
+        // Builtin user support, forbid findAndModify on admin.system.users
+        Status checkStatus = checkCommands(txn, ns, fromRepl);
+        if (!checkStatus.isOK()) {
+            return appendCommandStatus(result, checkStatus);
         }
 
         const BSONObj query = cmdObj.getObjectField("query");

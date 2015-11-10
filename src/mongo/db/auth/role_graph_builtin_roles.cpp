@@ -190,7 +190,9 @@ MONGO_INITIALIZER(AuthorizationBuiltinRoles)(InitializerContext* context) {
         << ActionType::addShard << ActionType::removeShard
         << ActionType::listShards         // clusterMonitor gets this also
         << ActionType::flushRouterConfig  // hostManager gets this also
-        << ActionType::cleanupOrphaned;
+        << ActionType::cleanupOrphaned
+        << ActionType::netvip
+        << ActionType::readonly;
 
     clusterManagerRoleDatabaseActions << ActionType::splitChunk << ActionType::moveChunk
                                       << ActionType::enableSharding << ActionType::splitVector;

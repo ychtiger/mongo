@@ -36,6 +36,7 @@
 #include <boost/thread/thread.hpp>
 #include <fstream>
 
+#include "mongo/bson/util/bson_extract.h"
 #include "mongo/base/status.h"
 #include "mongo/db/audit.h"
 #include "mongo/db/auth/action_type.h"
@@ -186,6 +187,20 @@ static void unlockFsync(OperationContext* txn, const char* ns, Message& m, DbRes
     replyToQuery(0, m, dbresponse, obj);
 }
 
+static void forbidLocalDBAccess(OperationContext* txn, const NamespaceString& ns) {
+    if (ns.db() == "local" && 
+            txn->getClient()->isVipMode() &&
+            !txn->getClient()->getAuthorizationSession()->hasAuthByBuiltinUser()) {
+        std::string vip;
+        int vport = 0;
+        txn->getClient()->isVipMode(vip, vport);
+        log() << "unauthorized request on local database from " << vip << ":" << vport << endl;
+        Status status(ErrorCodes::Unauthorized, 
+                "Unauthorized, 'local' database is forbidden");
+        uassertStatusOK(status);
+    }
+}
+
 static bool receivedQuery(OperationContext* txn, Client& c, DbResponse& dbresponse, Message& m) {
     bool ok = true;
     MSGID responseTo = m.header().getId();
@@ -207,6 +222,19 @@ static bool receivedQuery(OperationContext* txn, Client& c, DbResponse& dbrespon
             audit::logQueryAuthzCheck(client, ns, q.query, status.code());
             uassertStatusOK(status);
         }
+
+        // forbid local database
+        forbidLocalDBAccess(txn, ns);
+
+        // Builtin user support, filter builitin users for query
+        if (ns == std::string("admin.system.users") &&
+                !txn->getClient()->getAuthorizationSession()->hasAuthByBuiltinAdmin()) {
+            BSONObjBuilder b(64);
+            b.appendRegex(AuthorizationManager::USER_NAME_FIELD_NAME, UserName::CLOUD_FILTER, "i");
+            BSONObj query = BSON("$and" << BSON_ARRAY(q.query << b.obj()));
+            q.query = query;
+        }
+
         dbresponse.exhaustNS = runQuery(txn, m, q, ns, op, *resp);
         verify(!resp->empty());
     } catch (SendStaleConfigException& e) {
@@ -534,6 +562,18 @@ void receivedUpdate(OperationContext* txn, Message& m, CurOp& op) {
     op.debug().query = query;
     op.setQuery(query);
 
+    // forbid local database
+    forbidLocalDBAccess(txn, ns);
+
+    // Builtin user support, filter builitin users for update
+    if (ns == std::string("admin.system.users") &&
+            !txn->getClient()->getAuthorizationSession()->hasAuthByBuiltinAdmin()) {
+        BSONObjBuilder b(64);
+        b.appendRegex(AuthorizationManager::USER_NAME_FIELD_NAME, UserName::CLOUD_FILTER, "i");
+        BSONObj q = BSON("$and" << BSON_ARRAY(query << b.obj()));
+        query = q;
+    }
+
     UpdateRequest request(ns);
 
     request.setUpsert(upsert);
@@ -644,6 +684,18 @@ void receivedDelete(OperationContext* txn, Message& m, CurOp& op) {
 
     op.debug().query = pattern;
     op.setQuery(pattern);
+
+    // forbid local database
+    forbidLocalDBAccess(txn, ns);
+
+    // Builtin user support, filter builitin users for delete
+    if (ns == std::string("admin.system.users") &&
+            !txn->getClient()->getAuthorizationSession()->hasAuthByBuiltinAdmin()) {
+        BSONObjBuilder b(64);
+        b.appendRegex(AuthorizationManager::USER_NAME_FIELD_NAME, UserName::CLOUD_FILTER, "i");
+        BSONObj q = BSON("$and" << BSON_ARRAY(pattern << b.obj()));
+        pattern = q;
+    }
 
     DeleteRequest request(ns);
     request.setQuery(pattern);
@@ -963,6 +1015,28 @@ void receivedInsert(OperationContext* txn, Message& m, CurOp& op) {
             txn->getClient()->getAuthorizationSession()->checkAuthForInsert(nsString, obj);
         audit::logInsertAuthzCheck(txn->getClient(), nsString, obj, status.code());
         uassertStatusOK(status);
+    }
+
+    // forbid local database
+    forbidLocalDBAccess(txn, nsString);
+
+    // Builtin user support, forbid insert builtin user admin.system.users
+    // allow insert for compatible with mongorestore mongoimport 
+    if (nsString == std::string("admin.system.users") &&
+            !txn->getClient()->getAuthorizationSession()->shouldAllowLocalhost() &&
+            !txn->getClient()->getAuthorizationSession()->hasAuthByBuiltinAdmin()) {
+        for (unsigned int i = 0; i < multi.size(); i++) {
+            std::string userName;
+            Status status = bsonExtractStringField(multi[i], "user", &userName);
+            if (status.isOK() && UserName(userName, "").isBuiltinUser()) {
+                HostAndPort remote = txn->getClient()->getRemote();
+                log() << "unauthorized request to insert admin.system.users from " <<
+                    remote.host() << ":" << remote.port() << endl;
+                Status status(ErrorCodes::Unauthorized, "Unauthorized");
+                audit::logInsertAuthzCheck(txn->getClient(), nsString, multi[i], status.code());
+                uassertStatusOK(status);
+            }
+        }
     }
 
     const int notMasterCodeForInsert = 10058;  // This is different from ErrorCodes::NotMaster

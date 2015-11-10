@@ -290,5 +290,12 @@ bool ReplicationCoordinatorMock::shouldChangeSyncSource(const HostAndPort& curre
 
 void ReplicationCoordinatorMock::summarizeAsHtml(ReplSetHtmlSummary* output) {}
 
+void ReplicationCoordinatorMock::setNetVip(const std::vector<HostAndPort> &vips) {}
+
+Status ReplicationCoordinatorMock::setNetVip(const std::vector<std::string> &vipsString) { return Status::OK(); }
+
+std::vector<HostAndPort> ReplicationCoordinatorMock::getNetVip() const { return std::vector<HostAndPort>(); }
+
+
 }  // namespace repl
 }  // namespace mongo

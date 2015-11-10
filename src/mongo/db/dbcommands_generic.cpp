@@ -343,6 +343,14 @@ public:
             if (i->first != c->name)
                 continue;
 
+            // in vip mode, do not show forbidden commands
+            if (txn->getClient()->isVipMode()) {
+                CommandSet::const_iterator it = forbiddenCommands.find( i->first );
+                if (it != forbiddenCommands.end()) {
+                    continue;
+                }
+            }
+
             BSONObjBuilder temp(b.subobjStart(c->name));
 
             {

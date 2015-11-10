@@ -31,6 +31,7 @@
 
 #include <string>
 #include <vector>
+#include <set>
 
 #include "mongo/base/counter.h"
 #include "mongo/base/status.h"
@@ -43,6 +44,9 @@
 #include "mongo/util/string_map.h"
 
 namespace mongo {
+
+typedef std::set<std::string> CommandSet;
+extern CommandSet forbiddenCommands;
 
 class BSONObj;
 class BSONObjBuilder;
@@ -211,6 +215,11 @@ public:
     Command(StringData _name, bool webUI = false, StringData oldName = StringData());
 
     virtual ~Command() {}
+
+    /**
+     * internal check command before run 
+     */
+    virtual Status checkCommands(OperationContext* txn, const std::string& ns, bool fromRepl);
 
 protected:
     /**

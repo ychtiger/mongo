@@ -87,4 +87,8 @@ bool AuthzSessionExternalStateServerCommon::shouldIgnoreAuthChecks() const {
     return !_authzManager->isAuthEnabled();
 }
 
+bool AuthzSessionExternalStateServerCommon::isEnabledReadOnly() const {
+    return false;
+}
+
 }  // namespace mongo

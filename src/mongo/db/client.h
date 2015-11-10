@@ -261,6 +261,8 @@ public:
         return _connectionId > 0;
     }
 
+    virtual void initVipMode();
+
 private:
     Client(const std::string& desc, AbstractMessagingPort* p = 0);
     friend class CurOp;

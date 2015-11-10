@@ -34,6 +34,7 @@
 #include "mongo/db/auth/action_set.h"
 #include "mongo/db/auth/action_type.h"
 #include "mongo/db/auth/privilege.h"
+#include "mongo/db/auth/sasl_authentication_session.h"
 #include "mongo/db/catalog/database.h"
 #include "mongo/db/clientcursor.h"
 #include "mongo/db/commands.h"
@@ -114,6 +115,15 @@ public:
         BSONElementSet values;
 
         const string ns = parseNs(dbname, cmdObj);
+        // Builtin user support, filter builtin users
+        if (!fromRepl && ns == "admin.system.users" && 
+                !txn->getClient()->getAuthorizationSession()->hasAuthByBuiltinAdmin()) {
+            BSONObjBuilder b(64);
+            b.appendRegex(AuthorizationManager::USER_NAME_FIELD_NAME, UserName::CLOUD_FILTER, "i");
+            BSONObj q = BSON("$and" << BSON_ARRAY(query << b.obj()));
+            query = q;
+        }
+
         AutoGetCollectionForRead ctx(txn, ns);
 
         Collection* collection = ctx.getCollection();

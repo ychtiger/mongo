@@ -38,6 +38,7 @@
 #include <string>
 #include <vector>
 
+#include "mongo/base/init.h"
 #include "mongo/bson/mutable/document.h"
 #include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/db/audit.h"
@@ -66,6 +67,87 @@ Command::CommandMap* Command::_webCommands;
 Command::CommandMap* Command::_commands;
 
 int Command::testCommandsEnabled = 0;
+
+CommandSet forbiddenCommands;
+
+MONGO_INITIALIZER(SetupForbiddenCommands)(InitializerContext* context) {
+
+    forbiddenCommands.insert("eval");
+    forbiddenCommands.insert("authSchemaUpgrade");
+    forbiddenCommands.insert("replSetInitiate");
+    forbiddenCommands.insert("replSetFreeze");
+    forbiddenCommands.insert("replSetMaintenance");
+    forbiddenCommands.insert("replSetGetStatus");
+    forbiddenCommands.insert("replSetGetConfig");
+    forbiddenCommands.insert("replSetReconfig");
+    forbiddenCommands.insert("replSetStepDown");
+    forbiddenCommands.insert("replSetSyncFrom"); 
+    forbiddenCommands.insert("replSetElect"); 
+    forbiddenCommands.insert("replSetUpdatePosition"); 
+    forbiddenCommands.insert("resync");
+    forbiddenCommands.insert("appendOplogNote");
+    forbiddenCommands.insert("flushRouterConfig");
+    forbiddenCommands.insert("headdShard");
+    forbiddenCommands.insert("cleanupOrphaned");
+    forbiddenCommands.insert("checkShardingIndex");	
+    forbiddenCommands.insert("enableSharding");
+    forbiddenCommands.insert("listShards");
+    forbiddenCommands.insert("removeShard");	
+    forbiddenCommands.insert("getShardMap");
+    forbiddenCommands.insert("getShardVersion");
+    forbiddenCommands.insert("mergeChunks");
+    forbiddenCommands.insert("setShardVersion");
+    forbiddenCommands.insert("shardCollection");	
+    forbiddenCommands.insert("shardingState");	
+    forbiddenCommands.insert("unsetSharding");
+    forbiddenCommands.insert("split");
+    forbiddenCommands.insert("splitChunk");
+    forbiddenCommands.insert("splitVector");	
+    forbiddenCommands.insert("medianKey");
+    forbiddenCommands.insert("moveChunk");	
+    forbiddenCommands.insert("movePrimary");	
+    forbiddenCommands.insert("isdbgrid");
+    forbiddenCommands.insert("copydb");  
+    forbiddenCommands.insert("clone");  
+    forbiddenCommands.insert("clean");
+    forbiddenCommands.insert("shutdown");        
+    forbiddenCommands.insert("logRotate");       
+    forbiddenCommands.insert("repairDatabase");  
+    forbiddenCommands.insert("repairCursor");    
+    forbiddenCommands.insert("compact");         
+    forbiddenCommands.insert("setParameter");    
+    forbiddenCommands.insert("getParameter");
+    forbiddenCommands.insert("connPoolSync");
+    forbiddenCommands.insert("setReadonly");
+    forbiddenCommands.insert("netvip");
+    forbiddenCommands.insert("driverOIDTest");
+    forbiddenCommands.insert("connPoolStats");
+    forbiddenCommands.insert("shardConnPoolStats");
+    forbiddenCommands.insert("getLog");
+    forbiddenCommands.insert("diagLogging");
+    forbiddenCommands.insert("getCmdLineOpts");
+    forbiddenCommands.insert("netstat");
+    forbiddenCommands.insert("hostInfo");
+    forbiddenCommands.insert("handshake");
+    forbiddenCommands.insert("_recvChunkAbort");
+    forbiddenCommands.insert("_recvChunkCommit");
+    forbiddenCommands.insert("_recvChunkStart");
+    forbiddenCommands.insert("_recvChunkStatus");
+    forbiddenCommands.insert("_replSetFresh");
+    forbiddenCommands.insert("mapreduce.sharedfinish");
+    forbiddenCommands.insert("_transferMods");
+    forbiddenCommands.insert("replSetHeartbeat");
+    forbiddenCommands.insert("replSetGetRBID");
+    forbiddenCommands.insert("_migrateClone");
+    forbiddenCommands.insert("writeBacksQueued");
+    forbiddenCommands.insert("writebacklisten");
+    forbiddenCommands.insert("_getUserCacheGeneration");
+    forbiddenCommands.insert("_isSelf");
+    forbiddenCommands.insert("_mergeAuthzCollections");
+
+    return Status::OK();
+}
+
 
 Counter64 Command::unknownCommands;
 static ServerStatusMetricField<Counter64> displayUnknownCommands("commands.<UNKNOWN>",
@@ -340,6 +422,17 @@ void Command::logIfSlow(const Timer& timer, const string& msg) {
     if (ms > serverGlobalParams.slowMS) {
         log() << msg << " took " << ms << " ms." << endl;
     }
+}
+
+Status Command::checkCommands(OperationContext* txn, const std::string& ns, bool fromRepl) {
+    if (!fromRepl && ns == "admin.system.users" && 
+            !txn->getClient()->getAuthorizationSession()->hasAuthByBuiltinAdmin()) {
+        HostAndPort remote = txn->getClient()->getRemote();
+        log() << "unauthorized command " << name << " on admin.system.users from " 
+            << remote.host() << ":" << remote.port() << endl;
+        return Status(ErrorCodes::Unauthorized, "Unauthorized");
+    }
+    return Status::OK();
 }
 
 static Status _checkAuthorizationImpl(Command* c,

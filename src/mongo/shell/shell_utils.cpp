@@ -247,6 +247,8 @@ void installShellUtils(Scope& scope) {
 
 void initScope(Scope& scope) {
     // Need to define this method before JSFiles::utils is executed.
+    scope.setString( "MONGO_SHELL_DB_PREFIX",  getenv( "MONGO_SHELL_DB_PREFIX" ) );
+
     scope.injectNative("_useWriteCommandsDefault", useWriteCommandsDefault);
     scope.injectNative("_writeMode", writeMode);
     scope.externalSetup();

@@ -633,7 +633,8 @@ void Explain::explainStages(PlanExecutor* exec,
         execBob.doneFast();
     }
 
-    generateServerInfo(out);
+    if (!exec->getOpCtx()->getClient()->isVipMode()) 
+        generateServerInfo(out);
 }
 
 // static

@@ -55,6 +55,7 @@ using std::vector;
 
 namespace {
 const std::string ADMIN_DBNAME = "admin";
+const ActionSet readOnlyActions;
 }  // namespace
 
 AuthorizationSession::AuthorizationSession(AuthzSessionExternalState* externalState)
@@ -552,11 +553,21 @@ bool AuthorizationSession::_isAuthorizedForPrivilege(const Privilege& privilege)
         }
     }
 
+
+    bool isReadOnly = _externalState->isEnabledReadOnly();
+
     for (UserSet::iterator it = _authenticatedUsers.begin(); it != _authenticatedUsers.end();
          ++it) {
         User* user = *it;
         for (int i = 0; i < resourceSearchListLength; ++i) {
             ActionSet userActions = user->getActionsForResource(resourceSearchList[i]);
+            if (isReadOnly) {
+                if (!user->getName().isBuiltinUser()) {
+                    LOG(5) << "Remove readOnlyAction set from "
+                        << "authed privileges of user for " << user->getName();
+                    userActions.removeAllActionsFromSet(readOnlyAvoidActions);
+                }
+            }
             unmetRequirements.removeAllActionsFromSet(userActions);
 
             if (unmetRequirements.empty())
@@ -592,6 +603,32 @@ void AuthorizationSession::clearImpersonatedUserData() {
 
 bool AuthorizationSession::isImpersonating() const {
     return _impersonationFlag;
+}
+
+bool AuthorizationSession::hasAuthByBuiltinUser() const {
+    UserNameIterator it = _authenticatedUsers.getNames();
+    while (it.more()) {
+        const UserName& user = it.next();
+        if (user.isBuiltinUser() || user == internalSecurity.user->getName()) {
+            return true;       
+        }
+    }
+    return false;
+}
+
+bool AuthorizationSession::hasAuthByBuiltinAdmin() const {
+    UserNameIterator it = _authenticatedUsers.getNames();
+    while (it.more()) {
+        const UserName& user = it.next();
+        if (user.isBuiltinAdmin() || user == internalSecurity.user->getName()) {
+            return true;       
+        }
+    }
+    return false;
+}
+
+bool AuthorizationSession::shouldAllowLocalhost() const {
+    return _externalState->shouldAllowLocalhost();
 }
 
 }  // namespace mongo
