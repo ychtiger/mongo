@@ -229,10 +229,42 @@ static bool receivedQuery(OperationContext* txn, Client& c, DbResponse& dbrespon
         // Builtin user support, filter builitin users for query
         if (ns == std::string("admin.system.users") &&
                 !txn->getClient()->getAuthorizationSession()->hasAuthByBuiltinAdmin()) {
-            BSONObjBuilder b(64);
-            b.appendRegex(AuthorizationManager::USER_NAME_FIELD_NAME, UserName::CLOUD_FILTER, "i");
-            BSONObj query = BSON("$and" << BSON_ARRAY(q.query << b.obj()));
-            q.query = query;
+            // valid query may have following formats
+            // db.collection.find({x: 1})
+            // db.collection.find({$query: {x: 1}})
+            // db.collection.find({query: {x: 1}})
+            std::string queryName = "query";
+            BSONElement queryField = q.query[queryName];
+            if (!queryField.isABSONObj()) { 
+                queryName = "$query";
+                queryField = q.query[queryName];
+            }
+
+            if (queryField.isABSONObj()) {
+                BSONObjBuilder b(64);
+                b.appendRegex(AuthorizationManager::USER_NAME_FIELD_NAME, UserName::CLOUD_FILTER, "i");
+                BSONObj subQuery = queryField.embeddedObject();
+                BSONObj newSubQuery = BSON("$and" << BSON_ARRAY(subQuery << b.obj()));
+
+                std::set<std::string> fieldNames;
+                q.query.getFieldNames(fieldNames);
+                fieldNames.erase(queryName);
+
+                // rebuild new query object
+                BSONObjBuilder nb(64);
+                nb.append(queryName, newSubQuery);
+                BSONForEach( e, q.query ) {
+                    if (!str::equals(queryName.c_str() , e.fieldName())) {
+                        nb.append(e);
+                    }
+                }
+                q.query = nb.obj();
+            } else {
+                BSONObjBuilder b(64);
+                b.appendRegex(AuthorizationManager::USER_NAME_FIELD_NAME, UserName::CLOUD_FILTER, "i");
+                BSONObj query = BSON("$and" << BSON_ARRAY(q.query << b.obj()));
+                q.query = query;
+            }
         }
 
         dbresponse.exhaustNS = runQuery(txn, m, q, ns, op, *resp);

@@ -116,7 +116,6 @@ MONGO_INITIALIZER(SetupForbiddenCommands)(InitializerContext* context) {
     forbiddenCommands.insert("repairCursor");    
     forbiddenCommands.insert("compact");         
     forbiddenCommands.insert("setParameter");    
-    forbiddenCommands.insert("getParameter");
     forbiddenCommands.insert("connPoolSync");
     forbiddenCommands.insert("setReadonly");
     forbiddenCommands.insert("netvip");
@@ -142,7 +141,6 @@ MONGO_INITIALIZER(SetupForbiddenCommands)(InitializerContext* context) {
     forbiddenCommands.insert("writebacklisten");
     forbiddenCommands.insert("_getUserCacheGeneration");
     forbiddenCommands.insert("_isSelf");
-    forbiddenCommands.insert("_mergeAuthzCollections");
 
     return Status::OK();
 }
