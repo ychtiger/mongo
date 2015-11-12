@@ -1,5 +1,5 @@
 /**
-*    Copyright (C) 2012 10gen Inc.
+*    Copyright (C) 2015 Aliyun Inc.
 *
 *    This program is free software: you can redistribute it and/or  modify
 *    it under the terms of the GNU Affero General Public License, version 3,
@@ -26,39 +26,36 @@
 *    it in the license file.
 */
 
-#pragma once
+#ifndef VTOA_USER_H_INCLUDE
+#define VTOA_USER_H_INCLUDE
 
-#include "mongo/base/disallow_copying.h"
-#include "mongo/base/status.h"
-#include "mongo/db/auth/authorization_manager.h"
-#include "mongo/db/auth/authz_session_external_state.h"
+#include <linux/types.h>
 
-namespace mongo {
-
-/**
- * The implementation of AuthzSessionExternalState functionality common to mongod and mongos.
- */
-class AuthzSessionExternalStateServerCommon : public AuthzSessionExternalState {
-    MONGO_DISALLOW_COPYING(AuthzSessionExternalStateServerCommon);
-
-public:
-    virtual ~AuthzSessionExternalStateServerCommon();
-
-    virtual bool shouldAllowLocalhost() const;
-    virtual bool shouldIgnoreAuthChecks() const;
-    virtual bool serverIsArbiter() const;
-    virtual bool isEnabledReadOnly() const;
-
-protected:
-    AuthzSessionExternalStateServerCommon(AuthorizationManager* authzManager);
-
-    // Checks whether or not localhost connections should be given full access and stores the
-    // result in _allowLocalhost.  Currently localhost connections are only given full access
-    // if there are no users in the admin database.
-    void _checkShouldAllowLocalhost(OperationContext* txn);
-
-private:
-    bool _allowLocalhost;
+struct vtoa_vs {
+	__u32		vid;	/* VPC ID */
+	__be32		vaddr;	/* vip */
+	__be16		vport;	/* vport */
 };
 
-}  // namespace mongo
+struct vtoa_get_vs {
+	struct vtoa_vs vs;
+};
+
+struct vtoa_get_vs4rds {
+	/* which connection*/
+	__u16 protocol;
+	__be32 caddr;           /* client address */
+	__be16 cport;
+	__be32 daddr;           /* destination address */
+	__be16 dport;
+
+	/* the virtual servers */
+	struct vtoa_vs entrytable[0];
+};
+
+#define VTOA_BASE_CTL		(64+1024+64+64+64+64)	/* base */
+
+#define VTOA_SO_GET_VS		(VTOA_BASE_CTL+1)
+#define VTOA_SO_GET_VS4RDS	(VTOA_BASE_CTL+2)
+
+#endif

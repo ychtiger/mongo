@@ -1,5 +1,5 @@
 /**
-*    Copyright (C) 2008 10gen Inc.
+*    Copyright (C) 2015 Aliyun Inc.
 *
 *    This program is free software: you can redistribute it and/or  modify
 *    it under the terms of the GNU Affero General Public License, version 3,
@@ -26,50 +26,36 @@
 *    it in the license file.
 */
 
-#include "mongo/platform/basic.h"
-
-#include "mongo/db/client_basic.h"
-
-#include <boost/scoped_ptr.hpp>
-
-#include "mongo/db/auth/authentication_session.h"
-#include "mongo/db/auth/authorization_session.h"
+#pragma once
 
 namespace mongo {
+    class VipUtil {
+    public:
+        static void convertVipToStr(int32_t addr, std::string &str_addr);
+        static int getVip4rds(int sockfd, struct vtoa_get_vs4rds *vs, socklen_t *len);
 
-using boost::scoped_ptr;
+        /* 
+         * fd: raw fd, create by socket(AF_INET, SOCK_RAW, IPPROTO_RAW)
+         * client_host: connection peer host
+         * client_port: connection peer port
+         * dst_host: connection local host
+         * dst_port: connection local port
+         * vip_host: vip host
+         * vip_port: vip port
+         */
+        static bool getVipAddr(const int fd, 
+                const std::string &client_host, const int32_t client_port, 
+                const std::string &dst_host, const int32_t dst_port,
+                std::string &vip_host, int32_t &vip_port);
 
-ClientBasic::ClientBasic(AbstractMessagingPort* messagingPort) : _messagingPort(messagingPort), _vport(0), _vipMode(false) {}
-ClientBasic::~ClientBasic() {}
+        /**
+         * fd: tcp socket fd
+         * vip_host: vip host
+         * vip_port: vip port
+         */
+        static bool getVipAddr(int fd, 
+                std::string &vip_host, int32_t &vip_port);
 
-AuthenticationSession* ClientBasic::getAuthenticationSession() {
-    return _authenticationSession.get();
+    };
 }
 
-void ClientBasic::resetAuthenticationSession(AuthenticationSession* newSession) {
-    _authenticationSession.reset(newSession);
-}
-
-void ClientBasic::swapAuthenticationSession(scoped_ptr<AuthenticationSession>& other) {
-    _authenticationSession.swap(other);
-}
-
-bool ClientBasic::hasAuthorizationSession() const {
-    return _authorizationSession.get();
-}
-
-AuthorizationSession* ClientBasic::getAuthorizationSession() const {
-    massert(16481,
-            "No AuthorizationManager has been set up for this connection",
-            hasAuthorizationSession());
-    return _authorizationSession.get();
-}
-
-void ClientBasic::setAuthorizationSession(AuthorizationSession* authorizationSession) {
-    massert(16477,
-            "An AuthorizationManager has already been set up for this connection",
-            !hasAuthorizationSession());
-    _authorizationSession.reset(authorizationSession);
-}
-
-}  // namespace mongo

@@ -69,6 +69,8 @@
 #include "mongo/util/file_allocator.h"
 #include "mongo/util/mongoutils/str.h"
 #include "mongo/util/log.h"
+#include "mongo/util/net/viputil.h"
+#include "mongo/util/net/sock.h"
 
 namespace mongo {
 
@@ -102,6 +104,9 @@ void Client::initThread(const char* desc, AbstractMessagingPort* mp) {
     Client* client = new Client(fullDesc, mp);
     client->setAuthorizationSession(new AuthorizationSession(
         new AuthzSessionExternalStateMongod(getGlobalAuthorizationManager())));
+
+    // Init vipMode
+    client->initVipMode();
 
     currentClient.reset(client);
 
@@ -161,6 +166,12 @@ bool Client::shutdown() {
     }
 
     return false;
+}
+
+void Client::initVipMode() {
+    if (_messagingPort) {
+        _vipMode = _messagingPort->isVipMode(_vip, _vport);
+    }
 }
 
 BSONObj CachedBSONObjBase::_tooBig = fromjson("{\"$msg\":\"query not recording (too large)\"}");

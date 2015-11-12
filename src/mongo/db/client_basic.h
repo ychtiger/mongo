@@ -58,7 +58,7 @@ public:
     AuthorizationSession* getAuthorizationSession() const;
     void setAuthorizationSession(AuthorizationSession* authorizationSession);
 
-    bool getIsLocalHostConnection() {
+    bool getIsLocalHostConnection() const {
         if (!hasRemote()) {
             return false;
         }
@@ -78,12 +78,27 @@ public:
 
     static ClientBasic* getCurrent();
 
+    virtual void initVipMode() { }
+    bool isVipMode() const { return _vipMode; }
+    bool isVipMode(std::string& vip, int& vport) const { 
+        if (_vipMode) {
+            vip = _vip;
+            vport = _vport;
+        }
+        return _vipMode; 
+    }
+
 protected:
     ClientBasic(AbstractMessagingPort* messagingPort);
 
 private:
     boost::scoped_ptr<AuthenticationSession> _authenticationSession;
     boost::scoped_ptr<AuthorizationSession> _authorizationSession;
+
+protected:
     AbstractMessagingPort* const _messagingPort;
+    std::string _vip;
+    int _vport;
+    bool _vipMode;  // Mongod & Mongos both need
 };
 }

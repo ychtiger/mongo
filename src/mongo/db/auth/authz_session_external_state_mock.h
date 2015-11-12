@@ -70,6 +70,10 @@ public:
 
     virtual void startRequest(OperationContext* txn) {}
 
+    virtual bool isEnabledReadOnly() const {
+        return false;
+    }
+
 private:
     bool _ignoreAuthChecksReturnValue;
     bool _allowLocalhostReturnValue;

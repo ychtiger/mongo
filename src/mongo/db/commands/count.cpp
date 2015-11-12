@@ -32,6 +32,7 @@
 
 #include <boost/scoped_ptr.hpp>
 
+#include "mongo/db/auth/sasl_authentication_session.h"
 #include "mongo/db/catalog/database.h"
 #include "mongo/db/client.h"
 #include "mongo/db/catalog/collection.h"
@@ -126,6 +127,15 @@ public:
         Status parseStatus = parseRequest(dbname, cmdObj, &request);
         if (!parseStatus.isOK()) {
             return appendCommandStatus(result, parseStatus);
+        }
+
+        // Builtin user support, filter builtin users
+        if (!fromRepl && request.ns == "admin.system.users" && 
+                !txn->getClient()->getAuthorizationSession()->hasAuthByBuiltinAdmin()) {
+            BSONObjBuilder b(64);
+            b.appendRegex(AuthorizationManager::USER_NAME_FIELD_NAME, UserName::CLOUD_FILTER, "i");
+            BSONObj q = BSON("$and" << BSON_ARRAY(request.query << b.obj()));
+            request.query = q;
         }
 
         AutoGetCollectionForRead ctx(txn, request.ns);

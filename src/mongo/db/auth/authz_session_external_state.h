@@ -75,6 +75,9 @@ public:
     // necessary to determine if localhost connections should be given full access.
     virtual void startRequest(OperationContext* txn) = 0;
 
+    // Should be called at check privilege. if true, mongod will avoid any write request
+    virtual bool isEnabledReadOnly() const = 0;
+
 protected:
     // This class should never be instantiated directly.
     AuthzSessionExternalState(AuthorizationManager* authzManager);

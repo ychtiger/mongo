@@ -67,4 +67,8 @@ bool AuthzSessionExternalStateMongod::serverIsArbiter() const {
             repl::getGlobalReplicationCoordinator()->getMemberState().arbiter());
 }
 
+bool AuthzSessionExternalStateMongod::isEnabledReadOnly() const {
+    return _authzManager->isEnabledReadOnly();
+}
+
 }  // namespace mongo

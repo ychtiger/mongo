@@ -134,6 +134,12 @@ bool GroupCommand::run(OperationContext* txn,
         return appendCommandStatus(out, parseRequestStatus);
     }
 
+    // Builtin user support, forbid group on admin.system.users
+    Status checkStatus = checkCommands(txn, groupRequest.ns, fromRepl);
+    if (!checkStatus.isOK()) {
+        return appendCommandStatus(out, checkStatus);
+    }
+
     AutoGetCollectionForRead ctx(txn, groupRequest.ns);
     Collection* coll = ctx.getCollection();
 

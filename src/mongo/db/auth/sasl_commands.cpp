@@ -200,6 +200,10 @@ Status doSaslStep(const ClientBasic* client,
 
     if (session->isDone()) {
         UserName userName(session->getPrincipalId(), session->getAuthenticationDatabase());
+        // builtin admin can only auth from localhost
+        if (userName.isBuiltinAdmin() && !client->getIsLocalHostConnection()) {
+            return Status(ErrorCodes::AuthenticationFailed, "builtin admin must auth from localhost");
+        }
         status =
             session->getAuthorizationSession()->addAndAuthorizeUser(session->getOpCtxt(), userName);
         if (!status.isOK()) {

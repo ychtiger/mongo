@@ -99,8 +99,9 @@ createMongoArgs = function( binaryName , args ){
 
 MongoRunner = function(){}
     
-MongoRunner.dataDir = "/data/db"
-MongoRunner.dataPath = "/data/db/"
+print("DB Prefix: " + MONGO_SHELL_DB_PREFIX)
+MongoRunner.dataDir = MONGO_SHELL_DB_PREFIX + "/data/db"
+MongoRunner.dataPath = MONGO_SHELL_DB_PREFIX + "/data/db/"
 MongoRunner.usedPortMap = {}
 
 MongoRunner.VersionSub = function(regex, version) {

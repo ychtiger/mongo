@@ -106,6 +106,11 @@ Status addMongodOptions(moe::OptionSection* options) {
         .setSources(moe::SourceAllLegacy)
         .incompatibleWith("auth");
 
+    general_options.addOptionChaining("security.readonly.durationSecond", "readonly", moe::Long,
+            "value of read-only duration timeout (0=off -1=unlimited others=duration second)")
+        .setSources(moe::SourceYAMLConfig)
+        .setDefault(moe::Value(0));
+
     // Way to enable or disable auth in JSON Config
     general_options
         .addOptionChaining(
@@ -400,6 +405,10 @@ Status addMongodOptions(moe::OptionSection* options) {
         moe::Int,
         "size to use (in MB) for replication op log. default is 5% of disk space "
         "(i.e. large is good)");
+
+    rs_options.addOptionChaining("replication.netvip", "netVip", moe::StringVector,
+            "List of net vip.")
+        .setSources(moe::SourceYAMLConfig);
 
     rs_options.addOptionChaining("replication.replSet",
                                  "replSet",
@@ -1012,6 +1021,15 @@ Status storeMongodOptions(const moe::Environment& params, const std::vector<std:
         params["security.authorization"].as<std::string>() == "enabled") {
         getGlobalAuthorizationManager()->setAuthEnabled(true);
     }
+    if (params.count("security.readonly.durationSecond")) {
+        long long duration = params["security.readonly.durationSecond"].as<long>();
+        if ( duration > 60 * 60 * 24 * 365) { // duration can't long than one year
+            return Status(ErrorCodes::BadValue, "read only can't keep longer than one year"
+                    "(value must less than 31536000) "
+                    "--security.readonly.durationSecond setting");
+        }
+        getGlobalAuthorizationManager()->setReadOnlyExpire(duration);
+    }
     if (params.count("storage.mmapv1.quota.enforced")) {
         mmapv1GlobalOptions.quota = params["storage.mmapv1.quota.enforced"].as<bool>();
     }
@@ -1110,6 +1128,9 @@ Status storeMongodOptions(const moe::Environment& params, const std::vector<std:
     }
     if (params.count("pretouch")) {
         replSettings.pretouch = params["pretouch"].as<int>();
+    }
+    if (params.count("replication.netvip")) {
+        replSettings.netVip = params["replication.netvip"].as<std::vector<std::string> >();
     }
     if (params.count("replication.replSetName")) {
         replSettings.replSet = params["replication.replSetName"].as<string>().c_str();
