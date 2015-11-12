@@ -1,5 +1,5 @@
 [deps]
- scons-2.3.0-1.noarch.rpm 
+# scons-2.3.0-1.noarch.rpm 
  
 #second level requires analysis:
 python 
