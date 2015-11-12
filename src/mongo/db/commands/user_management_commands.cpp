@@ -42,6 +42,8 @@
 #include "mongo/bson/util/bson_extract.h"
 #include "mongo/client/dbclientinterface.h"
 #include "mongo/crypto/mechanism_scram.h"
+#include "mongo/db/operation_context.h"
+#include "mongo/db/client.h"
 #include "mongo/db/audit.h"
 #include "mongo/db/auth/action_set.h"
 #include "mongo/db/auth/action_type.h"
@@ -1066,6 +1068,12 @@ public:
         if (args.showPrivileges) {
             // If you want privileges you need to call getUserDescription on each user.
             for (size_t i = 0; i < args.userNames.size(); ++i) {
+                // Builtin user support for usersInfo command when args.showPrivileges is true
+                if (!fromRepl && args.userNames[i].isBuiltinUser() && 
+                        !txn->getClient()->getAuthorizationSession()->hasAuthByBuiltinAdmin()) {
+                    continue;
+                }
+
                 BSONObj userDetails;
                 status = getGlobalAuthorizationManager()->getUserDescription(
                     txn, args.userNames[i], &userDetails);

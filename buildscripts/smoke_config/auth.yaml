@@ -15,7 +15,7 @@ executor:
       TestData:
         auth: true
         authMechanism: SCRAM-SHA-1
-        keyFile: ./jstests/lib/authTestsKey
+        keyFile: ./jstests/libs/authTestsKey
         keyFileData: Thiskeyisonlyforrunningthesuitewithauthenticationdontuseitinanytestsdirectly
   testers:
     js_test:

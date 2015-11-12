@@ -172,11 +172,15 @@ public:
 
     void addHost(const HostAndPort& host);
 
+    void replaceHost(const std::vector<HostAndPort> &hosts);
+
     void addPassive(const HostAndPort& passive);
 
     void addArbiter(const HostAndPort& arbiter);
 
     void setPrimary(const HostAndPort& primary);
+
+    void clearPrimary();
 
     void setIsArbiterOnly(bool arbiterOnly);
 

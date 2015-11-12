@@ -30,6 +30,7 @@
 
 #include <set>
 #include <string>
+#include <vector>
 
 #include "mongo/db/jsobj.h"
 #include "mongo/util/concurrency/mutex.h"
@@ -68,6 +69,8 @@ public:
     std::string only;    // --only
     int pretouch;        // --pretouch for replication application (experimental)
 
+    std::vector<std::string> netVip;
+
     std::string replSet;  // --replSet[/<seedlist>]
     std::string ourSetName() const {
         std::string setname;
@@ -103,6 +106,7 @@ public:
           source(other.source),
           only(other.only),
           pretouch(other.pretouch),
+          netVip(other.netVip), 
           replSet(other.replSet),
           rsIndexPrefetch(other.rsIndexPrefetch) {}
 
@@ -119,6 +123,7 @@ public:
         source = other.source;
         only = other.only;
         pretouch = other.pretouch;
+        netVip = other.netVip;
         replSet = other.replSet;
         rsIndexPrefetch = other.rsIndexPrefetch;
         return *this;

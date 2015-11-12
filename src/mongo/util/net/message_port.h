@@ -70,6 +70,8 @@ public:
     }
     void setConnectionId(long long connectionId);
 
+    virtual bool isVipMode(std::string& vip, int& vport) { return false; }
+
 public:
     // TODO make this private with some helpers
 
@@ -159,6 +161,8 @@ public:
     uint64_t getSockCreationMicroSec() const {
         return psock->getSockCreationMicroSec();
     }
+
+    virtual bool isVipMode(std::string& vip, int& vport);
 
 private:
     PiggyBackData* piggyBackData;

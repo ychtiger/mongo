@@ -1,5 +1,5 @@
 /**
-*    Copyright (C) 2012 10gen Inc.
+*    Copyright (C) 2015 Aliyun Inc.
 *
 *    This program is free software: you can redistribute it and/or  modify
 *    it under the terms of the GNU Affero General Public License, version 3,
@@ -26,39 +26,38 @@
 *    it in the license file.
 */
 
-#pragma once
+#ifndef _SLB_CTK_USER_H_
+#define _SLB_CTK_USER_H_
 
-#include "mongo/base/disallow_copying.h"
-#include "mongo/base/status.h"
-#include "mongo/db/auth/authorization_manager.h"
-#include "mongo/db/auth/authz_session_external_state.h"
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <linux/types.h>
 
-namespace mongo {
-
-/**
- * The implementation of AuthzSessionExternalState functionality common to mongod and mongos.
- */
-class AuthzSessionExternalStateServerCommon : public AuthzSessionExternalState {
-    MONGO_DISALLOW_COPYING(AuthzSessionExternalStateServerCommon);
-
-public:
-    virtual ~AuthzSessionExternalStateServerCommon();
-
-    virtual bool shouldAllowLocalhost() const;
-    virtual bool shouldIgnoreAuthChecks() const;
-    virtual bool serverIsArbiter() const;
-    virtual bool isEnabledReadOnly() const;
-
-protected:
-    AuthzSessionExternalStateServerCommon(AuthorizationManager* authzManager);
-
-    // Checks whether or not localhost connections should be given full access and stores the
-    // result in _allowLocalhost.  Currently localhost connections are only given full access
-    // if there are no users in the admin database.
-    void _checkShouldAllowLocalhost(OperationContext* txn);
-
-private:
-    bool _allowLocalhost;
+/* The argument to SLB_CTK_SO_GET_VS */ 
+struct slb_ctk_vs_entry {
+        __be32 vaddr;           /* virtual address */
+        __be16 vport;
 };
 
-}  // namespace mongo
+struct slb_ctk_get_vs {
+        /* which connection*/
+        __u16 protocol;
+        __be32 caddr;           /* client address */
+        __be16 cport;
+        __be32 daddr;           /* destination address */
+        __be16 dport;
+
+        /* the virtual servers */
+        struct slb_ctk_vs_entry entrytable[0];
+};
+
+#define CTK_PROXY_BASE_CTL      (64+1024+64+64)    /* base */
+
+#define CTK_PROXY_SO_GET_VERSION   CTK_PROXY_BASE_CTL        /* just peek */
+#define CTK_PROXY_SO_GET_VS      (CTK_PROXY_BASE_CTL+1)
+#define CTK_PROXY_SO_GET_MAX      CTK_PROXY_SO_GET_VS
+
+#define CTK_VS_BUF_LEN 64
+
+#endif

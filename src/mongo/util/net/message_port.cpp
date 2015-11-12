@@ -41,6 +41,7 @@
 #include "mongo/util/background.h"
 #include "mongo/util/log.h"
 #include "mongo/util/net/listen.h"
+#include "mongo/util/net/viputil.h"
 #include "mongo/util/net/message.h"
 #include "mongo/util/net/ssl_manager.h"
 #include "mongo/util/net/ssl_options.h"
@@ -342,6 +343,10 @@ SockAddr MessagingPort::remoteAddr() const {
 
 SockAddr MessagingPort::localAddr() const {
     return psock->localAddr();
+}
+
+bool MessagingPort::isVipMode(std::string& vip, int& vport) {
+    return VipUtil::getVipAddr(psock->rawFD(), vip, vport);
 }
 
 }  // namespace mongo
