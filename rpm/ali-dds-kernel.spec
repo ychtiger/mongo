@@ -19,11 +19,6 @@ AutoReqProv: none
 Source: src.tar.gz
 
 %description
-CodeUrl:git@gitlab.alibaba-inc.com:dds/dds-kernel.git master
-CodeRev:4fcd354
-AoneLog:http://aone.alibaba-inc.com/aone2/blank/build/log/cr/RPM__237440
-AoneUrl:http://aone.alibaba-inc.com/aone2/cr/rpm/439154/detail
-
 MongoDB is built for scalability, performance and high availability, scaling from single server deployments to large, complex multi-site architectures. By leveraging in-memory computing, MongoDB provides high performance for both reads and writes. MongoDB’s native replication and automated failover enable enterprise-grade reliability and operational flexibility.
 
 
