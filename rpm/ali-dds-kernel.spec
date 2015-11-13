@@ -1,5 +1,6 @@
 Name: ali-dds-kernel
-Version:0.1.3
+Packager:linqing.zyd
+Version:0.1.5
 Release: %(echo $RELEASE)%{?dist} 
 # if you want use the parameter of rpm_create on build time,
 # uncomment below
@@ -12,6 +13,7 @@ AutoReqProv: none
 %define _prefix %{_root}/mongodb_install
 %define _saved %{_root}/mongodb_%(date +%%Y%%m%%d)_%{version}
 %define _current %{_root}/mongodb_current
+%undefine _missing_build_ids_terminate_build
 
 
 Source: src.tar.gz
@@ -36,7 +38,10 @@ MongoDB is built for scalability, performance and high availability, scaling fro
 # _lib is an inner var, maybe "lib" or "lib64" depend on OS
 #cd $OLDPWD/../;
 echo $PWD
-scons --cxx=/usr/local/gcc-4.9.2/bin/g++ --cc=/usr/local/gcc-4.9.2/bin/gcc --static-libstdc++=/usr/local/gcc-4.9.2/lib64/libstdc++.a --ssl=SSL --nostrip=NOSTRIP --prefix=${RPM_BUILD_ROOT}/%{_prefix} install %{?_smp_mflags}
+
+# see http://aone.alibaba-inc.com/aone2/doubt/commonDetail?id=189
+export PATH=/usr/local/gcc-4.9.2/bin:$PATH
+scons --static-libstdc++=/usr/local/gcc-4.9.2/lib64/libstdc++ --ssl=SSL --nostrip=NOSTRIP --prefix=${RPM_BUILD_ROOT}/%{_prefix} install %{?_smp_mflags}
 
 %files
 %defattr(775,admin,admin)
