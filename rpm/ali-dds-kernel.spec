@@ -9,11 +9,11 @@ Group: alibaba/application
 License: AGPL 3.0
 AutoReqProv: none
 
-%global debug_package %{nil}
 %define _root /u01
 %define _prefix %{_root}/mongodb_install
 %define _saved %{_root}/mongodb_%(date +%%Y%%m%%d)_%{version}
 %define _current %{_root}/mongodb_current
+%undefine _missing_build_ids_terminate_build
 
 
 Source: src.tar.gz
