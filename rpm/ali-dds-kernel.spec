@@ -46,7 +46,7 @@ echo $PWD
 
 # see http://aone.alibaba-inc.com/aone2/doubt/commonDetail?id=189
 export PATH=/usr/local/gcc-4.9.2/bin:$PATH
-scons --ssl=SSL --nostrip=NOSTRIP --prefix=${RPM_BUILD_ROOT}/%{_prefix} install %{?_smp_mflags}
+scons --static-libstdc++=/usr/local/gcc-4.9.2/lib64/libstdc++ --ssl=SSL --nostrip=NOSTRIP --prefix=${RPM_BUILD_ROOT}/%{_prefix} install %{?_smp_mflags}
 
 %files
 %defattr(775,admin,admin)
