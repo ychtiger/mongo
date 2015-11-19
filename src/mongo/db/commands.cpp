@@ -117,7 +117,7 @@ MONGO_INITIALIZER(SetupForbiddenCommands)(InitializerContext* context) {
     forbiddenCommands.insert("compact");         
     forbiddenCommands.insert("setParameter");    
     forbiddenCommands.insert("connPoolSync");
-    forbiddenCommands.insert("setReadonly");
+    forbiddenCommands.insert("setReadOnly");
     forbiddenCommands.insert("netvip");
     forbiddenCommands.insert("driverOIDTest");
     forbiddenCommands.insert("connPoolStats");
