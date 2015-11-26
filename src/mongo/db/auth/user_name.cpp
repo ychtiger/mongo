@@ -37,6 +37,7 @@ namespace mongo {
 
     const std::string UserName::CLOUD_PREFIX = "__cloud";
     const std::string UserName::CLOUD_ADMIN_PREFIX = "__cloud_admin";
+    const std::string UserName::CLOUD_INTERNAL_PREFIX = "__cloud_internal";
     const std::string UserName::CLOUD_FILTER = "^(?!__cloud)";
 
 
