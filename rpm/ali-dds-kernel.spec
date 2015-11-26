@@ -1,6 +1,6 @@
 Name: ali-dds-kernel
 Packager:linqing.zyd
-Version:0.1.5
+Version:0.1.6
 Release: %(echo $RELEASE)%{?dist} 
 # if you want use the parameter of rpm_create on build time,
 # uncomment below
