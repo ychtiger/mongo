@@ -1689,15 +1689,23 @@ bool _runCommands(OperationContext* txn,
     Command* c = e.type() ? Command::findCommand(e.fieldName()) : 0;
 
     // forbid some commands in vip mode
-    if (txn->getClient()->isVipMode() && 
+    if (c && txn->getClient()->isVipMode() && 
             !txn->getClient()->getAuthorizationSession()->hasAuthByBuiltinUser()) {
         CommandSet::const_iterator it = forbiddenCommands.find( e.fieldName() );
         if (it != forbiddenCommands.end()) {
+            c = 0;
+        }
+    
+        // deny command on local database except 'count'
+        if (c && dbname == "local" && !str::equals("count", e.fieldName())) {
+            c = 0;
+        }
+
+        if (c == 0) {
             std::string vip;
             int vport = 0;
             txn->getClient()->isVipMode(vip, vport);
-            c = 0;
-            log() << "unauthorized command " << *it << " from " << vip << ":" << vport << endl;
+            log() << "unauthorized command " << e.fieldName() << " from " << vip << ":" << vport << endl;
         }
     }
 

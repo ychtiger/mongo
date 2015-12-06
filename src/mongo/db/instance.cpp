@@ -224,7 +224,9 @@ static bool receivedQuery(OperationContext* txn, Client& c, DbResponse& dbrespon
         }
 
         // forbid local database
-        forbidLocalDBAccess(txn, ns);
+        if (ns != "local.oplog.rs" && !ns.isCommand()) {
+            forbidLocalDBAccess(txn, ns);
+        }
 
         // Builtin user support, filter builitin users for query
         if (ns == std::string("admin.system.users") &&
