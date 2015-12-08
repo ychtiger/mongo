@@ -187,20 +187,6 @@ static void unlockFsync(OperationContext* txn, const char* ns, Message& m, DbRes
     replyToQuery(0, m, dbresponse, obj);
 }
 
-static void forbidLocalDBAccess(OperationContext* txn, const NamespaceString& ns) {
-    if (ns.db() == "local" && 
-            txn->getClient()->isVipMode() &&
-            !txn->getClient()->getAuthorizationSession()->hasAuthByBuiltinUser()) {
-        std::string vip;
-        int vport = 0;
-        txn->getClient()->isVipMode(vip, vport);
-        log() << "unauthorized request on local database from " << vip << ":" << vport << endl;
-        Status status(ErrorCodes::Unauthorized, 
-                "Unauthorized, 'local' database is forbidden");
-        uassertStatusOK(status);
-    }
-}
-
 static bool receivedQuery(OperationContext* txn, Client& c, DbResponse& dbresponse, Message& m) {
     bool ok = true;
     MSGID responseTo = m.header().getId();
@@ -221,11 +207,6 @@ static bool receivedQuery(OperationContext* txn, Client& c, DbResponse& dbrespon
             Status status = client->getAuthorizationSession()->checkAuthForQuery(ns, q.query);
             audit::logQueryAuthzCheck(client, ns, q.query, status.code());
             uassertStatusOK(status);
-        }
-
-        // forbid local database
-        if (ns != "local.oplog.rs" && !ns.isCommand()) {
-            forbidLocalDBAccess(txn, ns);
         }
 
         // Builtin user support, filter builitin users for query
@@ -596,9 +577,6 @@ void receivedUpdate(OperationContext* txn, Message& m, CurOp& op) {
     op.debug().query = query;
     op.setQuery(query);
 
-    // forbid local database
-    forbidLocalDBAccess(txn, ns);
-
     // Builtin user support, filter builitin users for update
     if (ns == std::string("admin.system.users") &&
             !txn->getClient()->getAuthorizationSession()->hasAuthByBuiltinAdmin()) {
@@ -718,9 +696,6 @@ void receivedDelete(OperationContext* txn, Message& m, CurOp& op) {
 
     op.debug().query = pattern;
     op.setQuery(pattern);
-
-    // forbid local database
-    forbidLocalDBAccess(txn, ns);
 
     // Builtin user support, filter builitin users for delete
     if (ns == std::string("admin.system.users") &&
@@ -1050,9 +1025,6 @@ void receivedInsert(OperationContext* txn, Message& m, CurOp& op) {
         audit::logInsertAuthzCheck(txn->getClient(), nsString, obj, status.code());
         uassertStatusOK(status);
     }
-
-    // forbid local database
-    forbidLocalDBAccess(txn, nsString);
 
     // Builtin user support, forbid insert builtin user admin.system.users
     // allow insert for compatible with mongorestore mongoimport 

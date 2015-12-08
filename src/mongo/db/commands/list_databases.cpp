@@ -93,12 +93,6 @@ public:
         for (vector<string>::iterator i = dbNames.begin(); i != dbNames.end(); ++i) {
             const string& dbname = *i;
 
-            // local database is forbidden in vip mode
-            if (dbname == "local" && txn->getClient()->isVipMode() &&
-                    !txn->getClient()->getAuthorizationSession()->hasAuthByBuiltinUser()) {
-                continue;
-            }
-
             BSONObjBuilder b;
             b.append("name", dbname);
 

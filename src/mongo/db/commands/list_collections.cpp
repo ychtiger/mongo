@@ -32,6 +32,8 @@
 
 #include <boost/scoped_ptr.hpp>
 
+#include "mongo/db/auth/authorization_manager.h"
+#include "mongo/db/auth/authorization_session.h"
 #include "mongo/db/catalog/collection_catalog_entry.h"
 #include "mongo/db/catalog/cursor_manager.h"
 #include "mongo/db/catalog/database.h"
@@ -134,6 +136,13 @@ public:
 
             StringData collection = nsToCollectionSubstring(ns);
             if (collection == "system.namespaces") {
+                continue;
+            }
+
+            // ignore forbidden collections when listColletions
+            if (txn->getClient()->isVipMode() && 
+                    !txn->getClient()->getAuthorizationSession()->hasAuthByBuiltinUser() &&
+                    forbiddenCollections.find(ns) != forbiddenCollections.end()) {
                 continue;
             }
 
