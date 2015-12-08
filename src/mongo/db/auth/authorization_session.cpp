@@ -533,6 +533,19 @@ void AuthorizationSession::_buildAuthenticatedRolesVector() {
 bool AuthorizationSession::_isAuthorizedForPrivilege(const Privilege& privilege) {
     const ResourcePattern& target(privilege.getResourcePattern());
 
+    // forbid some special collection access
+    if (currentClient.get()->isVipMode() &&
+            !currentClient.get()->getAuthorizationSession()->hasAuthByBuiltinUser()) {
+        if (target.isExactNamespacePattern() && 
+                forbiddenCollections.find(target.ns().ns()) != forbiddenCollections.end()) {
+            std::string vip;
+            int vport = 0;
+            currentClient.get()->isVipMode(vip, vport);
+            log() << "unauthorized access to " <<  target.ns().ns() << " from " << vip << ":" << vport << std::endl;
+            return false;
+        }
+    }
+
     ResourcePattern resourceSearchList[resourceSearchListCapacity];
     const int resourceSearchListLength = buildResourceSearchList(target, resourceSearchList);
 

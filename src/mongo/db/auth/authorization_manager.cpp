@@ -74,6 +74,8 @@ AuthInfo internalSecurity;
 
 ActionSet readOnlyAvoidActions;
 
+std::set<std::string> forbiddenCollections;
+
 MONGO_INITIALIZER_WITH_PREREQUISITES(SetupInternalSecurityUser,
                                      MONGO_NO_PREREQUISITES)(InitializerContext* context) {
     User* user = new User(UserName("__system", "local"));
@@ -117,6 +119,12 @@ MONGO_INITIALIZER_WITH_PREREQUISITES(SetupInternalSecurityUser,
     readOnlyAvoidActions.addAction(ActionType::update                  );
     readOnlyAvoidActions.addAction(ActionType::updateRole              );
     readOnlyAvoidActions.addAction(ActionType::updateUser              );
+
+    // forbid some special collections
+    forbiddenCollections.insert("local.system.replset");
+    forbiddenCollections.insert("local.replset.minvalid");
+    forbiddenCollections.insert("local.startup_log");
+    forbiddenCollections.insert("local.me");
 
     return Status::OK();
 }
