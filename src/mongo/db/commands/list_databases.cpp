@@ -35,6 +35,8 @@
 #include "mongo/db/commands.h"
 #include "mongo/db/global_environment_experiment.h"
 #include "mongo/db/storage/storage_engine.h"
+#include "mongo/db/auth/authorization_manager.h"
+#include "mongo/db/auth/authorization_session.h"
 
 namespace mongo {
 
@@ -90,6 +92,12 @@ public:
         intmax_t totalSize = 0;
         for (vector<string>::iterator i = dbNames.begin(); i != dbNames.end(); ++i) {
             const string& dbname = *i;
+
+            // local database is forbidden in vip mode
+            if (dbname == "local" && txn->getClient()->isVipMode() &&
+                    !txn->getClient()->getAuthorizationSession()->hasAuthByBuiltinUser()) {
+                continue;
+            }
 
             BSONObjBuilder b;
             b.append("name", dbname);
