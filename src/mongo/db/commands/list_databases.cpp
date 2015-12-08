@@ -35,8 +35,6 @@
 #include "mongo/db/commands.h"
 #include "mongo/db/global_environment_experiment.h"
 #include "mongo/db/storage/storage_engine.h"
-#include "mongo/db/auth/authorization_manager.h"
-#include "mongo/db/auth/authorization_session.h"
 
 namespace mongo {
 
