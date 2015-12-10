@@ -220,6 +220,8 @@ public:
         BSONObjBuilder bb;
         bb.append("current", Listener::globalTicketHolder.used());
         bb.append("available", Listener::globalTicketHolder.available());
+        bb.append("local_current", Listener::localTicketHolder.used());
+        bb.append("local_available", Listener::localTicketHolder.available());
         bb.append("totalCreated", Listener::globalConnectionNumber.load());
         return bb.obj();
     }
