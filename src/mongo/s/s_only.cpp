@@ -81,8 +81,6 @@ bool Client::shutdown() {
     return true;
 }
 
-void Client::initVipMode() { }
-
 void Client::initThread(const char* desc, AbstractMessagingPort* mp) {
     // mp is non-null only for client connections, and mongos uses ClientInfo for those
     massert(16478, "Client being used for incoming connection thread in mongos", mp == NULL);

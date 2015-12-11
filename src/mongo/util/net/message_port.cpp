@@ -144,17 +144,17 @@ void MessagingPort::closeAllSockets(unsigned mask) {
 }
 
 MessagingPort::MessagingPort(int fd, const SockAddr& remote)
-    : psock(new Socket(fd, remote)), piggyBackData(0) {
+    : psock(new Socket(fd, remote)), piggyBackData(0), _vipMode(false), _vport(0) {
     ports.insert(this);
 }
 
 MessagingPort::MessagingPort(double timeout, logger::LogSeverity ll)
-    : psock(new Socket(timeout, ll)) {
+    : psock(new Socket(timeout, ll)), _vipMode(false), _vport(0) {
     ports.insert(this);
     piggyBackData = 0;
 }
 
-MessagingPort::MessagingPort(boost::shared_ptr<Socket> sock) : psock(sock), piggyBackData(0) {
+MessagingPort::MessagingPort(boost::shared_ptr<Socket> sock) : psock(sock), piggyBackData(0), _vipMode(false), _vport(0) {
     ports.insert(this);
 }
 
@@ -345,8 +345,20 @@ SockAddr MessagingPort::localAddr() const {
     return psock->localAddr();
 }
 
-bool MessagingPort::isVipMode(std::string& vip, int& vport) {
-    return VipUtil::getVipAddr(psock->rawFD(), vip, vport);
+void MessagingPort::initVipMode() {
+    _vipMode = VipUtil::getVipAddr(psock->rawFD(), _vip, _vport);
+}
+
+bool MessagingPort::isVipMode(std::string& vip, int& vport) const {
+    if (_vipMode) {
+        vip = _vip;
+        vport = _vport;
+    }
+    return _vipMode; 
+}
+
+bool MessagingPort::isVipMode() const {
+    return _vipMode;
 }
 
 }  // namespace mongo

@@ -70,7 +70,10 @@ public:
     }
     void setConnectionId(long long connectionId);
 
-    virtual bool isVipMode(std::string& vip, int& vport) { return false; }
+    /* vip interfaces */
+    virtual void initVipMode() { }
+    virtual bool isVipMode(std::string& vip, int& vport) const { return false; }
+    virtual bool isVipMode() const { return false; }
 
 public:
     // TODO make this private with some helpers
@@ -162,7 +165,9 @@ public:
         return psock->getSockCreationMicroSec();
     }
 
-    virtual bool isVipMode(std::string& vip, int& vport);
+    virtual void initVipMode();
+    virtual bool isVipMode(std::string& vip, int& vport) const;
+    virtual bool isVipMode() const;
 
 private:
     PiggyBackData* piggyBackData;
@@ -170,6 +175,11 @@ private:
     // this is the parsed version of remote
     // mutable because its initialized only on call to remote()
     mutable HostAndPort _remoteParsed;
+
+    // vip info ralated with this socket
+    bool _vipMode;
+    std::string _vip;
+    int _vport;
 
 public:
     static void closeAllSockets(unsigned tagMask = 0xffffffff);
