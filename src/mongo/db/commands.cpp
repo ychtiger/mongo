@@ -72,8 +72,13 @@ CommandSet forbiddenCommands;
 
 MONGO_INITIALIZER(SetupForbiddenCommands)(InitializerContext* context) {
 
+    // Query and Write Commands
     forbiddenCommands.insert("eval");
+
+    // Authentication Commands
     forbiddenCommands.insert("authSchemaUpgrade");
+
+    // Replication Commands
     forbiddenCommands.insert("replSetInitiate");
     forbiddenCommands.insert("replSetFreeze");
     forbiddenCommands.insert("replSetMaintenance");
@@ -86,27 +91,8 @@ MONGO_INITIALIZER(SetupForbiddenCommands)(InitializerContext* context) {
     forbiddenCommands.insert("replSetUpdatePosition"); 
     forbiddenCommands.insert("resync");
     forbiddenCommands.insert("appendOplogNote");
-    forbiddenCommands.insert("flushRouterConfig");
-    forbiddenCommands.insert("headdShard");
-    forbiddenCommands.insert("cleanupOrphaned");
-    forbiddenCommands.insert("checkShardingIndex");	
-    forbiddenCommands.insert("enableSharding");
-    forbiddenCommands.insert("listShards");
-    forbiddenCommands.insert("removeShard");	
-    forbiddenCommands.insert("getShardMap");
-    forbiddenCommands.insert("getShardVersion");
-    forbiddenCommands.insert("mergeChunks");
-    forbiddenCommands.insert("setShardVersion");
-    forbiddenCommands.insert("shardCollection");	
-    forbiddenCommands.insert("shardingState");	
-    forbiddenCommands.insert("unsetSharding");
-    forbiddenCommands.insert("split");
-    forbiddenCommands.insert("splitChunk");
-    forbiddenCommands.insert("splitVector");	
-    forbiddenCommands.insert("medianKey");
-    forbiddenCommands.insert("moveChunk");	
-    forbiddenCommands.insert("movePrimary");	
-    forbiddenCommands.insert("isdbgrid");
+
+    // Instance Administration Commands
     forbiddenCommands.insert("copydb");  
     forbiddenCommands.insert("clone");  
     forbiddenCommands.insert("clean");
@@ -119,6 +105,8 @@ MONGO_INITIALIZER(SetupForbiddenCommands)(InitializerContext* context) {
     forbiddenCommands.insert("connPoolSync");
     forbiddenCommands.insert("setReadOnly");
     forbiddenCommands.insert("netvip");
+
+    // Diagnostic Commands
     forbiddenCommands.insert("driverOIDTest");
     forbiddenCommands.insert("connPoolStats");
     forbiddenCommands.insert("shardConnPoolStats");
@@ -126,6 +114,8 @@ MONGO_INITIALIZER(SetupForbiddenCommands)(InitializerContext* context) {
     forbiddenCommands.insert("getCmdLineOpts");
     forbiddenCommands.insert("netstat");
     forbiddenCommands.insert("hostInfo");
+
+    // Internal Commands
     forbiddenCommands.insert("handshake");
     forbiddenCommands.insert("_recvChunkAbort");
     forbiddenCommands.insert("_recvChunkCommit");
