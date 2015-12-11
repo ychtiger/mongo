@@ -44,7 +44,7 @@
 namespace mongo {
 
 const int DEFAULT_MAX_CONN = 1000000;
-const int DEFAULT_MAX_CONN_LOCAL = 100;
+const int DEFAULT_MAX_CONN_INTERNAL = 500;
 
 class MessagingPort;
 
@@ -140,8 +140,8 @@ public:
     /** keeps track of how many allowed connections there are and how many are being used*/
     static TicketHolder globalTicketHolder;
 
-    /** keeps track of connections stat from localhost*/
-    static TicketHolder localTicketHolder;
+    /** keeps track of connections stat from internal network*/
+    static TicketHolder internalTicketHolder;
 
     /** makes sure user input is sane */
     static void checkTicketNumbers();

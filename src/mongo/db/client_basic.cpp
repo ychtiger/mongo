@@ -39,7 +39,7 @@ namespace mongo {
 
 using boost::scoped_ptr;
 
-ClientBasic::ClientBasic(AbstractMessagingPort* messagingPort) : _messagingPort(messagingPort), _vport(0), _vipMode(false) {}
+ClientBasic::ClientBasic(AbstractMessagingPort* messagingPort) : _messagingPort(messagingPort) {}
 ClientBasic::~ClientBasic() {}
 
 AuthenticationSession* ClientBasic::getAuthenticationSession() {
