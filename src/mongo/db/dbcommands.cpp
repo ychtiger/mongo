@@ -1689,7 +1689,7 @@ bool _runCommands(OperationContext* txn,
     Command* c = e.type() ? Command::findCommand(e.fieldName()) : 0;
 
     // forbid some commands in vip mode
-    if (txn->getClient()->isVipMode() && 
+    if (c && txn->getClient()->isVipMode() && 
             !txn->getClient()->getAuthorizationSession()->hasAuthByBuiltinUser()) {
         CommandSet::const_iterator it = forbiddenCommands.find( e.fieldName() );
         if (it != forbiddenCommands.end()) {

@@ -78,14 +78,18 @@ public:
 
     static ClientBasic* getCurrent();
 
-    virtual void initVipMode() { }
-    bool isVipMode() const { return _vipMode; }
-    bool isVipMode(std::string& vip, int& vport) const { 
-        if (_vipMode) {
-            vip = _vip;
-            vport = _vport;
+    bool isVipMode() const { 
+        if (_messagingPort) {
+            return _messagingPort->isVipMode();
         }
-        return _vipMode; 
+        return false;
+    }
+
+    bool isVipMode(std::string& vip, int& vport) const { 
+        if (_messagingPort) {
+            return _messagingPort->isVipMode(vip, vport);
+        }
+        return false;
     }
 
 protected:
@@ -97,8 +101,5 @@ private:
 
 protected:
     AbstractMessagingPort* const _messagingPort;
-    std::string _vip;
-    int _vport;
-    bool _vipMode;  // Mongod & Mongos both need
 };
 }

@@ -68,7 +68,12 @@ extern AuthInfo internalSecurity;  // set at startup and not changed after initi
  * avoid Action set for read only
  */
 extern ActionSet readOnlyAvoidActions;
- 
+
+/*
+ * forbidden colletions
+ */
+
+extern std::set<std::string> forbiddenCollections;
 
 /**
  * Contains server/cluster-wide information about Authorization.
