@@ -35,6 +35,7 @@
 #include "mongo/db/auth/action_set.h"
 #include "mongo/db/auth/action_type.h"
 #include "mongo/db/auth/privilege.h"
+#include "mongo/db/auth/sasl_authentication_session.h"
 #include "mongo/db/catalog/database.h"
 #include "mongo/db/client.h"
 #include "mongo/db/curop.h"
@@ -194,6 +195,12 @@ public:
         if (nss.coll().empty()) {
             errmsg = "missing collection name";
             return false;
+        }
+
+        // Builtin user support, forbid aggregate on admin.system.users
+        Status checkStatus = checkCommands(txn, nss.ns(), fromRepl);
+        if (!checkStatus.isOK()) {
+            return appendCommandStatus(result, checkStatus);
         }
 
         intrusive_ptr<ExpressionContext> pCtx = new ExpressionContext(txn, nss);

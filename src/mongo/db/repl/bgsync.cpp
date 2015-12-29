@@ -159,6 +159,7 @@ void BackgroundSync::producerThread() {
         }
     }
 
+    stop();
     cc().shutdown();
 }
 

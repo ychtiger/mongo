@@ -39,6 +39,7 @@
 #include "mongo/db/auth/action_set.h"
 #include "mongo/db/auth/action_type.h"
 #include "mongo/db/auth/authorization_manager.h"
+#include "mongo/db/auth/authorization_session.h"
 #include "mongo/db/auth/privilege.h"
 #include "mongo/db/background.h"
 #include "mongo/db/commands.h"
@@ -343,6 +344,15 @@ public:
             if (i->first != c->name)
                 continue;
 
+            // in vip mode, do not show forbidden commands
+            if (txn->getClient()->isVipMode() &&
+                    !txn->getClient()->getAuthorizationSession()->hasAuthByBuiltinUser()) {
+                CommandSet::const_iterator it = forbiddenCommands.find( i->first );
+                if (it != forbiddenCommands.end()) {
+                    continue;
+                }
+            }
+
             BSONObjBuilder temp(b.subobjStart(c->name));
 
             {
@@ -481,6 +491,15 @@ public:
         }
 
         string p = val.String();
+
+        // mongo shell need query {getLog: "startupWarnings"} when startup
+        if (txn->getClient()->isVipMode() && 
+                !txn->getClient()->getAuthorizationSession()->hasAuthByBuiltinUser() && 
+                p != "startupWarnings") {
+            return appendCommandStatus(result, 
+                    Status(ErrorCodes::Unauthorized, "Unauthorized"));
+        }
+ 
         if (p == "*") {
             vector<string> names;
             RamLog::getNames(names);

@@ -59,6 +59,7 @@
 #include "mongo/db/dbdirectclient.h"
 #include "mongo/db/dbhelpers.h"
 #include "mongo/db/global_environment_d.h"
+#include "mongo/db/global_environment_experiment.h"
 #include "mongo/db/index_builder.h"
 #include "mongo/db/instance.h"
 #include "mongo/db/introspect.h"
@@ -166,6 +167,17 @@ public:
         // disallow dropping the config database
         if (serverGlobalParams.configsvr && (dbname == "config")) {
             errmsg = "Cannot drop 'config' database if mongod started with --configsvr";
+            return false;
+        }
+
+        if (dbname == "admin" && txn->getClient()->isVipMode() &&
+                !txn->getClient()->getAuthorizationSession()->hasAuthByBuiltinUser()) {
+            std::string vip;
+            int vport = 0;
+            txn->getClient()->isVipMode(vip, vport);
+            log() << "unauthorized command dropDatabase " << dbname 
+                << " from " << vip << ":" << vport << endl;
+            errmsg = "Cannot drop 'admin' database";
             return false;
         }
 
@@ -1153,6 +1165,54 @@ public:
                     // Notify the index catalog that the definition of this index changed.
                     idx = coll->getIndexCatalog()->refreshEntry(txn, idx);
                     result.appendAs(newExpireSecs, "expireAfterSeconds_new");
+                } 
+            } else if ( str::equals( "cappedSize", e.fieldName() ) ||
+                        str::equals( "cappedMaxDocs", e.fieldName() ) ) {
+                if ( !e.isNumber() ) {
+                    errmsg = std::string(e.fieldName()) + " field must be a number";
+                    ok = false;
+                    continue;
+                }
+
+                const StringData name = e.fieldNameStringData();
+                const long long newVal = e.numberLong();
+
+                CollectionCatalogEntry* cce = coll->getCatalogEntry();
+
+                const CollectionOptions oldOptions = cce->getCollectionOptions(txn);
+                if ( !oldOptions.capped ) {
+                    errmsg = "not a capped collection";
+                    ok = false;
+                    continue;
+                }
+
+                if ( str::equals( "cappedSize", e.fieldName() ) ) {
+                    const long long oldCappedSize = oldOptions.cappedSize;
+                    const long long newCappedSize = newVal;
+
+                    if ( coll->getRecordStore()->setCappedSize(newCappedSize) ) {
+                        result.appendNumber( "cappedSize_old", oldCappedSize );
+                        result.appendNumber( "cappedSize_new", newCappedSize );
+                        cce->updateCappedSize( txn, newCappedSize );
+                    } else {
+                        errmsg = "option CappedSize not support";
+                        ok = false;
+                        continue;
+                    }
+
+                } else {
+                    const long long oldCappedMaxDocs = oldOptions.cappedMaxDocs;
+                    const long long newCappedMaxDocs = newVal;
+
+                    if ( coll->getRecordStore()->setCappedMaxDocs(newCappedMaxDocs) ) {
+                        result.appendNumber( "cappedMaxDocs_old", oldCappedMaxDocs );
+                        result.appendNumber( "cappedMaxDocs_new", newCappedMaxDocs );
+                        cce->updateCappedMaxDocs( txn, newCappedMaxDocs );
+                    } else {
+                        errmsg = "option cappedMaxDocs not support";
+                        ok = false;
+                        continue;
+                    }
                 }
             } else {
                 // As of SERVER-17312 we only support these two options. When SERVER-17320 is
@@ -1627,6 +1687,19 @@ bool _runCommands(OperationContext* txn,
     BSONElement e = jsobj.firstElement();
 
     Command* c = e.type() ? Command::findCommand(e.fieldName()) : 0;
+
+    // forbid some commands in vip mode
+    if (c && txn->getClient()->isVipMode() && 
+            !txn->getClient()->getAuthorizationSession()->hasAuthByBuiltinUser()) {
+        CommandSet::const_iterator it = forbiddenCommands.find( e.fieldName() );
+        if (it != forbiddenCommands.end()) {
+            std::string vip;
+            int vport = 0;
+            txn->getClient()->isVipMode(vip, vport);
+            c = 0;
+            log() << "unauthorized command " << *it << " from " << vip << ":" << vport << endl;
+        }
+    }
 
     if (c) {
         LOG(2) << "run command " << ns << ' ' << c->getRedactedCopyForLogging(_cmdobj);

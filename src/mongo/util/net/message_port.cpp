@@ -41,6 +41,7 @@
 #include "mongo/util/background.h"
 #include "mongo/util/log.h"
 #include "mongo/util/net/listen.h"
+#include "mongo/util/net/viputil.h"
 #include "mongo/util/net/message.h"
 #include "mongo/util/net/ssl_manager.h"
 #include "mongo/util/net/ssl_options.h"
@@ -143,17 +144,17 @@ void MessagingPort::closeAllSockets(unsigned mask) {
 }
 
 MessagingPort::MessagingPort(int fd, const SockAddr& remote)
-    : psock(new Socket(fd, remote)), piggyBackData(0) {
+    : psock(new Socket(fd, remote)), piggyBackData(0), _vipMode(false), _vport(0) {
     ports.insert(this);
 }
 
 MessagingPort::MessagingPort(double timeout, logger::LogSeverity ll)
-    : psock(new Socket(timeout, ll)) {
+    : psock(new Socket(timeout, ll)), _vipMode(false), _vport(0) {
     ports.insert(this);
     piggyBackData = 0;
 }
 
-MessagingPort::MessagingPort(boost::shared_ptr<Socket> sock) : psock(sock), piggyBackData(0) {
+MessagingPort::MessagingPort(boost::shared_ptr<Socket> sock) : psock(sock), piggyBackData(0), _vipMode(false), _vport(0) {
     ports.insert(this);
 }
 
@@ -342,6 +343,22 @@ SockAddr MessagingPort::remoteAddr() const {
 
 SockAddr MessagingPort::localAddr() const {
     return psock->localAddr();
+}
+
+void MessagingPort::initVipMode() {
+    _vipMode = VipUtil::getVipAddr(psock->rawFD(), _vip, _vport);
+}
+
+bool MessagingPort::isVipMode(std::string& vip, int& vport) const {
+    if (_vipMode) {
+        vip = _vip;
+        vport = _vport;
+    }
+    return _vipMode; 
+}
+
+bool MessagingPort::isVipMode() const {
+    return _vipMode;
 }
 
 }  // namespace mongo

@@ -58,7 +58,7 @@ public:
     AuthorizationSession* getAuthorizationSession() const;
     void setAuthorizationSession(AuthorizationSession* authorizationSession);
 
-    bool getIsLocalHostConnection() {
+    bool getIsLocalHostConnection() const {
         if (!hasRemote()) {
             return false;
         }
@@ -78,12 +78,28 @@ public:
 
     static ClientBasic* getCurrent();
 
+    bool isVipMode() const { 
+        if (_messagingPort) {
+            return _messagingPort->isVipMode();
+        }
+        return false;
+    }
+
+    bool isVipMode(std::string& vip, int& vport) const { 
+        if (_messagingPort) {
+            return _messagingPort->isVipMode(vip, vport);
+        }
+        return false;
+    }
+
 protected:
     ClientBasic(AbstractMessagingPort* messagingPort);
 
 private:
     boost::scoped_ptr<AuthenticationSession> _authenticationSession;
     boost::scoped_ptr<AuthorizationSession> _authorizationSession;
+
+protected:
     AbstractMessagingPort* const _messagingPort;
 };
 }

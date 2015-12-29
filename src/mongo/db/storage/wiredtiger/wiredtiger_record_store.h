@@ -194,6 +194,16 @@ public:
     int64_t cappedMaxDocs() const;
     int64_t cappedMaxSize() const;
 
+    virtual bool setCappedSize(long long cappedSize) {
+        _cappedMaxSize = cappedSize; 
+        return true; 
+    }
+
+    virtual bool setCappedMaxDocs(long long cappedMaxDocs) {
+        _cappedMaxDocs = cappedMaxDocs; 
+        return true;
+    }
+
     const std::string& getURI() const {
         return _uri;
     }
@@ -280,9 +290,9 @@ private:
     // The capped settings should not be updated once operations have started
     const bool _isCapped;
     const bool _isOplog;
-    const int64_t _cappedMaxSize;
+    int64_t _cappedMaxSize;
     const int64_t _cappedMaxSizeSlack;  // when to start applying backpressure
-    const int64_t _cappedMaxDocs;
+    int64_t _cappedMaxDocs;
     RecordId _cappedFirstRecord;
     CappedDocumentDeleteCallback* _cappedDeleteCallback;
     int _cappedDeleteCheckCount;                     // see comment in ::cappedDeleteAsNeeded

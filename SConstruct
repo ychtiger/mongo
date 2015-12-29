@@ -667,6 +667,8 @@ if windows:
         envDict['MSVC_USE_SCRIPT'] = msvc_script
 
 env = Environment(variables=env_vars, **envDict)
+env.Append(ENV = {'PATH' : os.environ['PATH']})
+Export('env')
 del envDict
 
 if has_option('variables-help'):

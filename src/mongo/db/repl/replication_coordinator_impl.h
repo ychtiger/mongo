@@ -218,6 +218,12 @@ public:
 
     virtual void summarizeAsHtml(ReplSetHtmlSummary* s);
 
+    virtual void setNetVip(const std::vector<HostAndPort> &vips);
+
+    virtual Status setNetVip(const std::vector<std::string> &netVipString);
+
+    virtual std::vector<HostAndPort> getNetVip() const; 
+
     // ================== Test support API ===================
 
     /**
@@ -862,6 +868,12 @@ private:
     // providing the prior value for a limited period of time is acceptable.  Also unlike
     // _canAcceptNonLocalWrites, its value is only meaningful on replica set secondaries.
     AtomicUInt32 _canServeNonLocalReads;  // (S)
+
+    // Net VIP ip list
+    // just storage and query
+    mutable boost::mutex _netVipMutex;  
+    std::vector<HostAndPort> _netVip;
+
 };
 
 }  // namespace repl

@@ -61,6 +61,22 @@ void appendReplicationInfo(OperationContext* txn, BSONObjBuilder& result, int le
     if (replCoord->getSettings().usingReplSets()) {
         IsMasterResponse isMasterResponse;
         replCoord->fillIsMasterForReplSet(&isMasterResponse);
+
+        // if client is vip tunnel, replace hosts with vip list, 
+        // and remove primary if not primary
+        std::string vipaddr;
+        int vipport;
+        if (txn->getClient()->isVipMode(vipaddr, vipport)) {
+            isMasterResponse.replaceHost(replCoord->getNetVip());
+            HostAndPort meVip(vipaddr, vipport);
+            isMasterResponse.setMe(meVip);
+            if (isMasterResponse.isMaster()) {
+                isMasterResponse.setPrimary(meVip);
+            } else {
+                isMasterResponse.clearPrimary();   
+            }
+        }
+
         result.appendElements(isMasterResponse.toBSON());
         if (level) {
             replCoord->appendSlaveInfoData(&result);

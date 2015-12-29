@@ -36,6 +36,7 @@
 #include <boost/thread/thread.hpp>
 #include <fstream>
 
+#include "mongo/bson/util/bson_extract.h"
 #include "mongo/base/status.h"
 #include "mongo/db/audit.h"
 #include "mongo/db/auth/action_type.h"
@@ -207,6 +208,48 @@ static bool receivedQuery(OperationContext* txn, Client& c, DbResponse& dbrespon
             audit::logQueryAuthzCheck(client, ns, q.query, status.code());
             uassertStatusOK(status);
         }
+
+        // Builtin user support, filter builitin users for query
+        if (ns == std::string("admin.system.users") &&
+                !txn->getClient()->getAuthorizationSession()->hasAuthByBuiltinAdmin()) {
+            // valid query may have following formats
+            // db.collection.find({x: 1})
+            // db.collection.find({$query: {x: 1}})
+            // db.collection.find({query: {x: 1}})
+            std::string queryName = "query";
+            BSONElement queryField = q.query[queryName];
+            if (!queryField.isABSONObj()) { 
+                queryName = "$query";
+                queryField = q.query[queryName];
+            }
+
+            if (queryField.isABSONObj()) {
+                BSONObjBuilder b(64);
+                b.appendRegex(AuthorizationManager::USER_NAME_FIELD_NAME, UserName::CLOUD_FILTER, "i");
+                BSONObj subQuery = queryField.embeddedObject();
+                BSONObj newSubQuery = BSON("$and" << BSON_ARRAY(subQuery << b.obj()));
+
+                std::set<std::string> fieldNames;
+                q.query.getFieldNames(fieldNames);
+                fieldNames.erase(queryName);
+
+                // rebuild new query object
+                BSONObjBuilder nb(64);
+                nb.append(queryName, newSubQuery);
+                BSONForEach( e, q.query ) {
+                    if (!str::equals(queryName.c_str() , e.fieldName())) {
+                        nb.append(e);
+                    }
+                }
+                q.query = nb.obj();
+            } else {
+                BSONObjBuilder b(64);
+                b.appendRegex(AuthorizationManager::USER_NAME_FIELD_NAME, UserName::CLOUD_FILTER, "i");
+                BSONObj query = BSON("$and" << BSON_ARRAY(q.query << b.obj()));
+                q.query = query;
+            }
+        }
+
         dbresponse.exhaustNS = runQuery(txn, m, q, ns, op, *resp);
         verify(!resp->empty());
     } catch (SendStaleConfigException& e) {
@@ -534,6 +577,15 @@ void receivedUpdate(OperationContext* txn, Message& m, CurOp& op) {
     op.debug().query = query;
     op.setQuery(query);
 
+    // Builtin user support, filter builitin users for update
+    if (ns == std::string("admin.system.users") &&
+            !txn->getClient()->getAuthorizationSession()->hasAuthByBuiltinAdmin()) {
+        BSONObjBuilder b(64);
+        b.appendRegex(AuthorizationManager::USER_NAME_FIELD_NAME, UserName::CLOUD_FILTER, "i");
+        BSONObj q = BSON("$and" << BSON_ARRAY(query << b.obj()));
+        query = q;
+    }
+
     UpdateRequest request(ns);
 
     request.setUpsert(upsert);
@@ -644,6 +696,15 @@ void receivedDelete(OperationContext* txn, Message& m, CurOp& op) {
 
     op.debug().query = pattern;
     op.setQuery(pattern);
+
+    // Builtin user support, filter builitin users for delete
+    if (ns == std::string("admin.system.users") &&
+            !txn->getClient()->getAuthorizationSession()->hasAuthByBuiltinAdmin()) {
+        BSONObjBuilder b(64);
+        b.appendRegex(AuthorizationManager::USER_NAME_FIELD_NAME, UserName::CLOUD_FILTER, "i");
+        BSONObj q = BSON("$and" << BSON_ARRAY(pattern << b.obj()));
+        pattern = q;
+    }
 
     DeleteRequest request(ns);
     request.setQuery(pattern);
@@ -963,6 +1024,25 @@ void receivedInsert(OperationContext* txn, Message& m, CurOp& op) {
             txn->getClient()->getAuthorizationSession()->checkAuthForInsert(nsString, obj);
         audit::logInsertAuthzCheck(txn->getClient(), nsString, obj, status.code());
         uassertStatusOK(status);
+    }
+
+    // Builtin user support, forbid insert builtin user admin.system.users
+    // allow insert for compatible with mongorestore mongoimport 
+    if (nsString == std::string("admin.system.users") &&
+            !txn->getClient()->getAuthorizationSession()->shouldAllowLocalhost() &&
+            !txn->getClient()->getAuthorizationSession()->hasAuthByBuiltinAdmin()) {
+        for (unsigned int i = 0; i < multi.size(); i++) {
+            std::string userName;
+            Status status = bsonExtractStringField(multi[i], "user", &userName);
+            if (status.isOK() && UserName(userName, "").isBuiltinUser()) {
+                HostAndPort remote = txn->getClient()->getRemote();
+                log() << "unauthorized request to insert admin.system.users from " <<
+                    remote.host() << ":" << remote.port() << endl;
+                Status status(ErrorCodes::Unauthorized, "Unauthorized");
+                audit::logInsertAuthzCheck(txn->getClient(), nsString, multi[i], status.code());
+                uassertStatusOK(status);
+            }
+        }
     }
 
     const int notMasterCodeForInsert = 10058;  // This is different from ErrorCodes::NotMaster

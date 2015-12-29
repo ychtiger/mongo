@@ -77,6 +77,9 @@ public:
 
     virtual void updateFlags(OperationContext* txn, int newValue);
 
+    virtual void updateCappedSize(OperationContext* txn, long long cappedSize);
+    virtual void updateCappedMaxDocs(OperationContext* txn, long long cappedMaxDocs);
+
     RecordStore* getRecordStore() {
         return _recordStore.get();
     }

@@ -50,6 +50,9 @@ public:
     virtual bool serverIsArbiter() const;
 
     virtual void startRequest(OperationContext* txn);
+
+    virtual bool isEnabledReadOnly() const;
+
 };
 
 }  // namespace mongo

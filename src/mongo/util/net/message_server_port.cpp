@@ -107,11 +107,22 @@ public:
         ScopeGuard sleepAfterClosingPort = MakeGuard(sleepmillis, 2);
         std::auto_ptr<MessagingPortWithHandler> portWithHandler(
             new MessagingPortWithHandler(psocket, _handler, connectionId));
+    
+        // init vipMode after accept()
+        portWithHandler->initVipMode();
 
-        if (!Listener::globalTicketHolder.tryAcquire()) {
-            log() << "connection refused because too many open connections: "
-                  << Listener::globalTicketHolder.used() << endl;
-            return;
+        if (!portWithHandler->isVipMode()) {
+            if (!Listener::internalTicketHolder.tryAcquire()) {
+                log() << "connection refused because too many open internal connections: "
+                    << Listener::internalTicketHolder.used() << endl;
+                return;
+            }
+        } else {
+            if (!Listener::globalTicketHolder.tryAcquire()) {
+                log() << "connection refused because too many open connections: "
+                    << Listener::globalTicketHolder.used() << endl;
+                return;
+            }
         }
 
         try {
@@ -154,10 +165,18 @@ public:
             portWithHandler.release();
             sleepAfterClosingPort.Dismiss();
         } catch (boost::thread_resource_error&) {
-            Listener::globalTicketHolder.release();
+            if (!portWithHandler->isVipMode()) {
+                Listener::internalTicketHolder.release();
+            } else {
+                Listener::globalTicketHolder.release();
+            }
             log() << "can't create new thread, closing connection" << endl;
         } catch (...) {
-            Listener::globalTicketHolder.release();
+            if (!portWithHandler->isVipMode()) {
+                Listener::internalTicketHolder.release();
+            } else {
+                Listener::globalTicketHolder.release();
+            }
             log() << "unknown error accepting new socket" << endl;
         }
     }
@@ -194,7 +213,6 @@ private:
      * @return NULL
      */
     static void* handleIncomingMsg(void* arg) {
-        TicketHolderReleaser connTicketReleaser(&Listener::globalTicketHolder);
 
         invariant(arg);
         scoped_ptr<MessagingPortWithHandler> portWithHandler(
@@ -218,7 +236,7 @@ private:
 
                 if (!portWithHandler->recv(m)) {
                     if (!serverGlobalParams.quiet) {
-                        int conns = Listener::globalTicketHolder.used() - 1;
+                        int conns = Listener::globalTicketHolder.used() + Listener::internalTicketHolder.used() - 1;
                         const char* word = (conns == 1 ? " connection" : " connections");
                         log() << "end connection " << portWithHandler->psock->remoteString() << " ("
                               << conns << word << " now open)" << endl;
@@ -259,6 +277,12 @@ private:
             manager->cleanupThreadLocals();
 #endif
         handler->disconnected(portWithHandler.get());
+
+        if (!portWithHandler->isVipMode()) {
+            Listener::internalTicketHolder.release();
+        } else {
+            Listener::globalTicketHolder.release();
+        }
 
         return NULL;
     }

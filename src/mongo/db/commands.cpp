@@ -38,6 +38,7 @@
 #include <string>
 #include <vector>
 
+#include "mongo/base/init.h"
 #include "mongo/bson/mutable/document.h"
 #include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/db/audit.h"
@@ -66,6 +67,74 @@ Command::CommandMap* Command::_webCommands;
 Command::CommandMap* Command::_commands;
 
 int Command::testCommandsEnabled = 0;
+
+CommandSet forbiddenCommands;
+
+MONGO_INITIALIZER(SetupForbiddenCommands)(InitializerContext* context) {
+
+    // Query and Write Commands
+    forbiddenCommands.insert("eval");
+
+    // Authentication Commands
+    forbiddenCommands.insert("authSchemaUpgrade");
+
+    // Replication Commands
+    forbiddenCommands.insert("replSetInitiate");
+    forbiddenCommands.insert("replSetFreeze");
+    forbiddenCommands.insert("replSetMaintenance");
+    forbiddenCommands.insert("replSetGetStatus");
+    forbiddenCommands.insert("replSetGetConfig");
+    forbiddenCommands.insert("replSetReconfig");
+    forbiddenCommands.insert("replSetStepDown");
+    forbiddenCommands.insert("replSetSyncFrom"); 
+    forbiddenCommands.insert("replSetElect"); 
+    forbiddenCommands.insert("replSetUpdatePosition"); 
+    forbiddenCommands.insert("resync");
+    forbiddenCommands.insert("appendOplogNote");
+
+    // Instance Administration Commands
+    forbiddenCommands.insert("copydb");  
+    forbiddenCommands.insert("clone");  
+    forbiddenCommands.insert("clean");
+    forbiddenCommands.insert("shutdown");        
+    forbiddenCommands.insert("logRotate");       
+    forbiddenCommands.insert("repairDatabase");  
+    forbiddenCommands.insert("repairCursor");    
+    forbiddenCommands.insert("compact");         
+    forbiddenCommands.insert("setParameter");    
+    forbiddenCommands.insert("connPoolSync");
+    forbiddenCommands.insert("setReadOnly");
+    forbiddenCommands.insert("netvip");
+
+    // Diagnostic Commands
+    forbiddenCommands.insert("driverOIDTest");
+    forbiddenCommands.insert("connPoolStats");
+    forbiddenCommands.insert("shardConnPoolStats");
+    forbiddenCommands.insert("diagLogging");
+    forbiddenCommands.insert("getCmdLineOpts");
+    forbiddenCommands.insert("netstat");
+    forbiddenCommands.insert("hostInfo");
+
+    // Internal Commands
+    forbiddenCommands.insert("handshake");
+    forbiddenCommands.insert("_recvChunkAbort");
+    forbiddenCommands.insert("_recvChunkCommit");
+    forbiddenCommands.insert("_recvChunkStart");
+    forbiddenCommands.insert("_recvChunkStatus");
+    forbiddenCommands.insert("_replSetFresh");
+    forbiddenCommands.insert("mapreduce.sharedfinish");
+    forbiddenCommands.insert("_transferMods");
+    forbiddenCommands.insert("replSetHeartbeat");
+    forbiddenCommands.insert("replSetGetRBID");
+    forbiddenCommands.insert("_migrateClone");
+    forbiddenCommands.insert("writeBacksQueued");
+    forbiddenCommands.insert("writebacklisten");
+    forbiddenCommands.insert("_getUserCacheGeneration");
+    forbiddenCommands.insert("_isSelf");
+
+    return Status::OK();
+}
+
 
 Counter64 Command::unknownCommands;
 static ServerStatusMetricField<Counter64> displayUnknownCommands("commands.<UNKNOWN>",
@@ -340,6 +409,17 @@ void Command::logIfSlow(const Timer& timer, const string& msg) {
     if (ms > serverGlobalParams.slowMS) {
         log() << msg << " took " << ms << " ms." << endl;
     }
+}
+
+Status Command::checkCommands(OperationContext* txn, const std::string& ns, bool fromRepl) {
+    if (!fromRepl && ns == "admin.system.users" && 
+            !txn->getClient()->getAuthorizationSession()->hasAuthByBuiltinAdmin()) {
+        HostAndPort remote = txn->getClient()->getRemote();
+        log() << "unauthorized command " << name << " on admin.system.users from " 
+            << remote.host() << ":" << remote.port() << endl;
+        return Status(ErrorCodes::Unauthorized, "Unauthorized");
+    }
+    return Status::OK();
 }
 
 static Status _checkAuthorizationImpl(Command* c,

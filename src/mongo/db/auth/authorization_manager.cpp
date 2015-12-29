@@ -62,6 +62,7 @@
 #include "mongo/util/log.h"
 #include "mongo/util/map_util.h"
 #include "mongo/util/mongoutils/str.h"
+#include "mongo/util/time_support.h"
 
 namespace mongo {
 
@@ -70,6 +71,10 @@ using std::string;
 using std::vector;
 
 AuthInfo internalSecurity;
+
+ActionSet readOnlyAvoidActions;
+
+std::set<std::string> forbiddenCollections;
 
 MONGO_INITIALIZER_WITH_PREREQUISITES(SetupInternalSecurityUser,
                                      MONGO_NO_PREREQUISITES)(InitializerContext* context) {
@@ -82,6 +87,44 @@ MONGO_INITIALIZER_WITH_PREREQUISITES(SetupInternalSecurityUser,
     RoleGraph::generateUniversalPrivileges(&privileges);
     user->addPrivileges(privileges);
     internalSecurity.user = user;
+
+    // TODO more action type add
+    /**
+     * Add read only avoid action
+     * Action List:
+     *     createCollection createDatabase createIndex 
+     *     createRole createIndex createUser
+     *     dropAllRolesFromDatabase 
+     *     dropAllUsersFromDatabase
+     *     dropCollection dropDatabase dropIndex
+     *     dropRole dropUser
+     *     insert remove update
+     *     updateRole updateUser
+     */
+    readOnlyAvoidActions.addAction(ActionType::createCollection        );
+    readOnlyAvoidActions.addAction(ActionType::createDatabase          );
+    readOnlyAvoidActions.addAction(ActionType::createIndex             );
+    readOnlyAvoidActions.addAction(ActionType::createRole              );
+    readOnlyAvoidActions.addAction(ActionType::createIndex             );
+    readOnlyAvoidActions.addAction(ActionType::createUser              );
+    readOnlyAvoidActions.addAction(ActionType::dropAllRolesFromDatabase);
+    readOnlyAvoidActions.addAction(ActionType::dropAllUsersFromDatabase);
+    readOnlyAvoidActions.addAction(ActionType::dropCollection          );
+    readOnlyAvoidActions.addAction(ActionType::dropDatabase            );
+    readOnlyAvoidActions.addAction(ActionType::dropIndex               );
+    readOnlyAvoidActions.addAction(ActionType::dropRole                );
+    readOnlyAvoidActions.addAction(ActionType::dropUser                );
+    readOnlyAvoidActions.addAction(ActionType::insert                  );
+    readOnlyAvoidActions.addAction(ActionType::remove                  );
+    readOnlyAvoidActions.addAction(ActionType::update                  );
+    readOnlyAvoidActions.addAction(ActionType::updateRole              );
+    readOnlyAvoidActions.addAction(ActionType::updateUser              );
+
+    // forbid some special collections
+    forbiddenCollections.insert("local.system.replset");
+    forbiddenCollections.insert("local.replset.minvalid");
+    forbiddenCollections.insert("local.startup_log");
+    forbiddenCollections.insert("local.me");
 
     return Status::OK();
 }
@@ -990,5 +1033,49 @@ void AuthorizationManager::logOp(
         _invalidateRelevantCacheData(op, ns, o, o2);
     }
 }
+
+bool AuthorizationManager::isEnabledReadOnly()
+{
+    return getReadOnlyRemainSecond() !=0;
+}
+
+void AuthorizationManager::setReadOnlyExpire(long long durationSecond)
+{
+    CacheGuard guard(this, CacheGuard::fetchSynchronizationManual);
+    if (durationSecond < 0)
+        _readOnlyExpire = -1;
+    else if (durationSecond == 0)
+        _readOnlyExpire = 0;
+    else {
+        long long now = curTimeMillis64() / 1000;
+        _readOnlyExpire = now + durationSecond;
+        fassert(30001, _readOnlyExpire > now);
+    }
+}
+
+long long AuthorizationManager::getReadOnlyExpire()
+{
+    return _readOnlyExpire;
+}
+
+long long AuthorizationManager::getReadOnlyRemainSecond()
+{
+    long long expire = _readOnlyExpire;
+    if (expire <= 0) {
+        return expire ;
+    }
+    long long now = curTimeMillis64() / 1000;
+    if (expire > now) {
+        return expire - now;
+    }
+
+    {
+        CacheGuard guard(this, CacheGuard::fetchSynchronizationManual);
+        if (_readOnlyExpire > 0 && _readOnlyExpire <= now)
+            _readOnlyExpire = 0;
+    }
+    return 0;
+}
+
 
 }  // namespace mongo

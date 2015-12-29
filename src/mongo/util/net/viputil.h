@@ -1,5 +1,5 @@
 /**
-*    Copyright (C) 2012 10gen Inc.
+*    Copyright (C) 2015 Aliyun Inc.
 *
 *    This program is free software: you can redistribute it and/or  modify
 *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,37 +28,34 @@
 
 #pragma once
 
-#include "mongo/base/disallow_copying.h"
-#include "mongo/base/status.h"
-#include "mongo/db/auth/authorization_manager.h"
-#include "mongo/db/auth/authz_session_external_state.h"
-
 namespace mongo {
+    class VipUtil {
+    public:
+        static void convertVipToStr(int32_t addr, std::string &str_addr);
+        static int getVip4rds(int sockfd, struct vtoa_get_vs4rds *vs, socklen_t *len);
 
-/**
- * The implementation of AuthzSessionExternalState functionality common to mongod and mongos.
- */
-class AuthzSessionExternalStateServerCommon : public AuthzSessionExternalState {
-    MONGO_DISALLOW_COPYING(AuthzSessionExternalStateServerCommon);
+        /* 
+         * fd: raw fd, create by socket(AF_INET, SOCK_RAW, IPPROTO_RAW)
+         * client_host: connection peer host
+         * client_port: connection peer port
+         * dst_host: connection local host
+         * dst_port: connection local port
+         * vip_host: vip host
+         * vip_port: vip port
+         */
+        static bool getVipAddr(const int fd, 
+                const std::string &client_host, const int32_t client_port, 
+                const std::string &dst_host, const int32_t dst_port,
+                std::string &vip_host, int32_t &vip_port);
 
-public:
-    virtual ~AuthzSessionExternalStateServerCommon();
+        /**
+         * fd: tcp socket fd
+         * vip_host: vip host
+         * vip_port: vip port
+         */
+        static bool getVipAddr(int fd, 
+                std::string &vip_host, int32_t &vip_port);
 
-    virtual bool shouldAllowLocalhost() const;
-    virtual bool shouldIgnoreAuthChecks() const;
-    virtual bool serverIsArbiter() const;
-    virtual bool isEnabledReadOnly() const;
+    };
+}
 
-protected:
-    AuthzSessionExternalStateServerCommon(AuthorizationManager* authzManager);
-
-    // Checks whether or not localhost connections should be given full access and stores the
-    // result in _allowLocalhost.  Currently localhost connections are only given full access
-    // if there are no users in the admin database.
-    void _checkShouldAllowLocalhost(OperationContext* txn);
-
-private:
-    bool _allowLocalhost;
-};
-
-}  // namespace mongo

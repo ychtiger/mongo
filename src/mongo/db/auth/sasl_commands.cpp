@@ -200,6 +200,16 @@ Status doSaslStep(const ClientBasic* client,
 
     if (session->isDone()) {
         UserName userName(session->getPrincipalId(), session->getAuthenticationDatabase());
+        // builtin admin can only auth from localhost
+        if (userName.isBuiltinAdmin() && !client->getIsLocalHostConnection()) {
+            return Status(ErrorCodes::AuthenticationFailed, "builtin admin must auth from localhost");
+        }
+
+        // builtin internal user can only auth from inner network
+        if (userName.isBuiltinInternal() && client->isVipMode()) {
+            return Status(ErrorCodes::AuthenticationFailed, "builtin internal must auth from inner network");
+        }
+
         status =
             session->getAuthorizationSession()->addAndAuthorizeUser(session->getOpCtxt(), userName);
         if (!status.isOK()) {
