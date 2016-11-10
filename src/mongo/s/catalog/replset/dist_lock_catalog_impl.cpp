@@ -46,6 +46,10 @@
 #include "mongo/s/catalog/type_lockpings.h"
 #include "mongo/s/catalog/type_locks.h"
 #include "mongo/s/client/shard_registry.h"
+#include "mongo/s/grid.h"
+#include "mongo/s/write_ops/batched_command_request.h"
+#include "mongo/s/write_ops/batched_command_response.h"
+#include "mongo/s/write_ops/batched_update_request.h"
 #include "mongo/s/write_ops/wc_error_detail.h"
 #include "mongo/util/time_support.h"
 
@@ -60,6 +64,12 @@ const char kCmdResponseWriteConcernField[] = "writeConcernError";
 const char kFindAndModifyResponseResultDocField[] = "value";
 const char kLocalTimeField[] = "localTime";
 const ReadPreferenceSetting kReadPref(ReadPreference::PrimaryOnly, TagSet());
+const WriteConcernOptions kMajorityWriteConcern(WriteConcernOptions::kMajority,
+                                                // Note: Even though we're setting NONE here,
+                                                // kMajority implies JOURNAL if journaling is
+                                                // supported by this mongod.
+                                                WriteConcernOptions::NONE,
+                                                Seconds(15));
 
 /**
  * Returns the resulting new object from the findAndModify response object.
@@ -139,17 +149,8 @@ StatusWith<OID> extractElectionId(const BSONObj& responseObj) {
 
 }  // unnamed namespace
 
-DistLockCatalogImpl::DistLockCatalogImpl(ShardRegistry* shardRegistry,
-                                         Milliseconds writeConcernTimeout)
-    : _client(shardRegistry),
-      _writeConcern(WriteConcernOptions(WriteConcernOptions::kMajority,
-                                        // Note: Even though we're setting NONE here,
-                                        // kMajority implies JOURNAL, if journaling is supported
-                                        // by this mongod.
-                                        WriteConcernOptions::NONE,
-                                        durationCount<Milliseconds>(writeConcernTimeout))),
-      _lockPingNS(LockpingsType::ConfigNS),
-      _locksNS(LocksType::ConfigNS) {}
+DistLockCatalogImpl::DistLockCatalogImpl(ShardRegistry* shardRegistry)
+    : _client(shardRegistry), _lockPingNS(LockpingsType::ConfigNS), _locksNS(LocksType::ConfigNS) {}
 
 DistLockCatalogImpl::~DistLockCatalogImpl() = default;
 
@@ -186,7 +187,7 @@ Status DistLockCatalogImpl::ping(OperationContext* txn, StringData processID, Da
                                          BSON(LockpingsType::process() << processID),
                                          BSON("$set" << BSON(LockpingsType::ping(ping))));
     request.setUpsert(true);
-    request.setWriteConcern(_writeConcern);
+    request.setWriteConcern(kMajorityWriteConcern);
 
     auto resultStatus = _client->runCommandOnConfigWithRetries(
         txn, _locksNS.db().toString(), request.toBSON(), ShardRegistry::kNotMasterErrors);
@@ -218,7 +219,7 @@ StatusWith<LocksType> DistLockCatalogImpl::grabLock(OperationContext* txn,
         BSON("$set" << newLockDetails));
     request.setUpsert(true);
     request.setShouldReturnNew(true);
-    request.setWriteConcern(_writeConcern);
+    request.setWriteConcern(kMajorityWriteConcern);
 
     auto resultStatus = _client->runCommandOnConfigWithRetries(
         txn, _locksNS.db().toString(), request.toBSON(), ShardRegistry::kNotMasterErrors);
@@ -272,7 +273,7 @@ StatusWith<LocksType> DistLockCatalogImpl::overtakeLock(OperationContext* txn,
     auto request = FindAndModifyRequest::makeUpdate(
         _locksNS, BSON("$or" << orQueryBuilder.arr()), BSON("$set" << newLockDetails));
     request.setShouldReturnNew(true);
-    request.setWriteConcern(_writeConcern);
+    request.setWriteConcern(kMajorityWriteConcern);
 
     auto resultStatus = _client->runCommandOnConfigWithRetries(
         txn, _locksNS.db().toString(), request.toBSON(), ShardRegistry::kNotMasterErrors);
@@ -304,7 +305,7 @@ Status DistLockCatalogImpl::unlock(OperationContext* txn, const OID& lockSession
         _locksNS,
         BSON(LocksType::lockID(lockSessionID)),
         BSON("$set" << BSON(LocksType::state(LocksType::UNLOCKED))));
-    request.setWriteConcern(_writeConcern);
+    request.setWriteConcern(kMajorityWriteConcern);
 
     auto resultStatus = _client->runCommandOnConfigWithRetries(
         txn, _locksNS.db().toString(), request.toBSON(), ShardRegistry::kAllRetriableErrors);
@@ -325,6 +326,41 @@ Status DistLockCatalogImpl::unlock(OperationContext* txn, const OID& lockSession
     }
 
     return findAndModifyStatus;
+}
+
+Status DistLockCatalogImpl::unlockAll(OperationContext* txn, const std::string& processID) {
+    std::unique_ptr<BatchedUpdateDocument> updateDoc(new BatchedUpdateDocument());
+    updateDoc->setQuery(BSON(LocksType::process(processID)));
+    updateDoc->setUpdateExpr(BSON("$set" << BSON(LocksType::state(LocksType::UNLOCKED))));
+    updateDoc->setUpsert(false);
+    updateDoc->setMulti(true);
+
+    std::unique_ptr<BatchedUpdateRequest> updateRequest(new BatchedUpdateRequest());
+    updateRequest->addToUpdates(updateDoc.release());
+
+    BatchedCommandRequest request(updateRequest.release());
+    request.setNS(_locksNS);
+    request.setWriteConcern(kMajorityWriteConcern.toBSON());
+
+    BSONObj cmdObj = request.toBSON();
+
+    auto response = _client->runCommandOnConfigWithRetries(
+        txn, "config", cmdObj, ShardRegistry::kAllRetriableErrors);
+
+
+    if (!response.isOK()) {
+        return response.getStatus();
+    }
+
+    BatchedCommandResponse batchResponse;
+    std::string errmsg;
+    if (!batchResponse.parseBSON(response.getValue(), &errmsg)) {
+        return Status(ErrorCodes::FailedToParse,
+                      str::stream()
+                          << "Failed to parse config server response to batch request for "
+                             "unlocking existing distributed locks" << causedBy(errmsg));
+    }
+    return batchResponse.toStatus();
 }
 
 StatusWith<DistLockCatalog::ServerInfo> DistLockCatalogImpl::getServerInfo(OperationContext* txn) {
@@ -416,7 +452,7 @@ StatusWith<LocksType> DistLockCatalogImpl::getLockByName(OperationContext* txn, 
 Status DistLockCatalogImpl::stopPing(OperationContext* txn, StringData processId) {
     auto request =
         FindAndModifyRequest::makeRemove(_lockPingNS, BSON(LockpingsType::process() << processId));
-    request.setWriteConcern(_writeConcern);
+    request.setWriteConcern(kMajorityWriteConcern);
 
     auto resultStatus = _client->runCommandOnConfigWithRetries(
         txn, _locksNS.db().toString(), request.toBSON(), ShardRegistry::kNotMasterErrors);

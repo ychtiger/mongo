@@ -47,7 +47,7 @@ struct ReadPreferenceSetting;
 
 class DistLockCatalogImpl final : public DistLockCatalog {
 public:
-    DistLockCatalogImpl(ShardRegistry* shardRegistry, Milliseconds writeConcernTimeout);
+    DistLockCatalogImpl(ShardRegistry* shardRegistry);
 
     virtual ~DistLockCatalogImpl();
 
@@ -74,6 +74,8 @@ public:
 
     virtual Status unlock(OperationContext* txn, const OID& lockSessionID) override;
 
+    virtual Status unlockAll(OperationContext* txn, const std::string& processID) override;
+
     virtual StatusWith<ServerInfo> getServerInfo(OperationContext* txn) override;
 
     virtual StatusWith<LocksType> getLockByTS(OperationContext* txn,
@@ -94,8 +96,8 @@ private:
     ShardRegistry* _client;
 
     // These are not static to avoid initialization order fiasco.
-    const WriteConcernOptions _writeConcern;
     const NamespaceString _lockPingNS;
     const NamespaceString _locksNS;
 };
-}
+
+}  // namespace mongo

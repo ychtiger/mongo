@@ -34,7 +34,6 @@
 
 #include <memory.h>
 
-
 #include "mongo/base/owned_pointer_vector.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/db/record_id.h"
@@ -67,10 +66,7 @@ public:
 
     virtual void abandonSnapshot();
 
-    // un-used API
-    virtual void* writingPtr(void* data, size_t len) {
-        invariant(!"don't call writingPtr");
-    }
+    virtual void* writingPtr(void* data, size_t len);
 
     virtual void setRollbackWritesDisabled() {}
 
@@ -111,8 +107,6 @@ public:
         return _oplogReadTill;
     }
 
-    void markNoTicketRequired();
-
     static WiredTigerRecoveryUnit* get(OperationContext* txn);
 
     static void appendGlobalStats(BSONObjBuilder& b);
@@ -147,10 +141,6 @@ private:
 
     typedef OwnedPointerVector<Change> Changes;
     Changes _changes;
-
-    bool _noTicketNeeded;
-    void _getTicket(OperationContext* opCtx);
-    TicketHolderReleaser _ticket;
 };
 
 /**

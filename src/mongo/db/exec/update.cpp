@@ -378,29 +378,34 @@ inline Status validate(const BSONObj& original,
     return Status::OK();
 }
 
-Status ensureIdAndFirst(mb::Document& doc) {
-    mb::Element idElem = mb::findFirstChildNamed(doc.root(), idFieldName);
+Status ensureIdFieldIsFirst(mb::Document* doc) {
+    mb::Element idElem = mb::findFirstChildNamed(doc->root(), idFieldName);
 
-    // Move _id as first element if it exists
-    if (idElem.ok()) {
-        if (idElem.leftSibling().ok()) {
-            Status s = idElem.remove();
-            if (!s.isOK())
-                return s;
-            s = doc.root().pushFront(idElem);
-            if (!s.isOK())
-                return s;
-        }
-    } else {
-        // Create _id if the document does not currently have one.
-        idElem = doc.makeElementNewOID(idFieldName);
-        if (!idElem.ok())
-            return Status(
-                ErrorCodes::BadValue, "Could not create new _id ObjectId element.", 17268);
-        Status s = doc.root().pushFront(idElem);
+    if (!idElem.ok()) {
+        return {ErrorCodes::InvalidIdField, "_id field is missing"};
+    }
+
+    if (idElem.leftSibling().ok()) {
+        // Move '_id' to be the first element
+        Status s = idElem.remove();
+        if (!s.isOK())
+            return s;
+        s = doc->root().pushFront(idElem);
         if (!s.isOK())
             return s;
     }
+
+    return Status::OK();
+}
+
+Status addObjectIDIdField(mb::Document* doc) {
+    const auto idElem = doc->makeElementNewOID(idFieldName);
+    if (!idElem.ok())
+        return {ErrorCodes::BadValue, "Could not create new ObjectId '_id' field.", 17268};
+
+    const auto s = doc->root().pushFront(idElem);
+    if (!s.isOK())
+        return s;
 
     return Status::OK();
 }
@@ -484,8 +489,20 @@ BSONObj UpdateStage::transformAndUpdate(const Snapshotted<BSONObj>& oldObj, Reco
         uasserted(16837, status.reason());
     }
 
-    // Ensure _id exists and is first
-    uassertStatusOK(ensureIdAndFirst(_doc));
+    // Skip adding _id field if the collection is capped (since capped collection documents can
+    // neither grow nor shrink).
+    const auto createIdField = !_collection->isCapped();
+
+    // Ensure if _id exists it is first
+    status = ensureIdFieldIsFirst(&_doc);
+    if (status.code() == ErrorCodes::InvalidIdField) {
+        // Create ObjectId _id field if we are doing that
+        if (createIdField) {
+            uassertStatusOK(addObjectIDIdField(&_doc));
+        }
+    } else {
+        uassertStatusOK(status);
+    }
 
     // See if the changes were applied in place
     const char* source = NULL;
@@ -641,7 +658,11 @@ Status UpdateStage::applyUpdateOpsForInsert(const CanonicalQuery* cq,
     }
 
     // Ensure _id exists and is first
-    Status idAndFirstStatus = ensureIdAndFirst(*doc);
+    auto idAndFirstStatus = ensureIdFieldIsFirst(doc);
+    if (idAndFirstStatus.code() == ErrorCodes::InvalidIdField) {  // _id field is missing
+        idAndFirstStatus = addObjectIDIdField(doc);
+    }
+
     if (!idAndFirstStatus.isOK()) {
         return idAndFirstStatus;
     }
@@ -811,17 +832,6 @@ PlanStage::StageState UpdateStage::work(WorkingSetID* out) {
 
         if (!member->hasLoc()) {
             // We expect to be here because of an invalidation causing a force-fetch.
-
-            // When we're doing a findAndModify with a sort, the sort will have a limit of 1, so
-            // will not produce any more results even if there is another matching document.
-            // Throw a WCE here so that these operations get another chance to find a matching
-            // document. The findAndModify command should automatically retry if it gets a WCE. The
-            // findAndModify command should automatically retry if it gets a WCE.
-            // TODO: this is not necessary if there was no sort specified.
-            if (_params.request->shouldReturnAnyDocs()) {
-                throw WriteConflictException();
-            }
-
             ++_specificStats.nInvalidateSkips;
             ++_commonStats.needTime;
             return PlanStage::NEED_TIME;

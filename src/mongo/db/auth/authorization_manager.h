@@ -64,6 +64,22 @@ struct AuthInfo {
 };
 extern AuthInfo internalSecurity;  // set at startup and not changed after initialization.
 
+/*
+ * forbidden colletions
+ */
+
+extern std::set<std::string> forbiddenCollections;
+
+/**
+ * avoid Action set for read only
+ */
+extern ActionSet readOnlyAvoidActions;
+
+/**
+ * bypass operations from localhost
+ */
+extern PrivilegeVector bypassPrivileges;
+
 /**
  * Contains server/cluster-wide information about Authorization.
  */
@@ -314,6 +330,24 @@ public:
                const BSONObj& obj,
                BSONObj* patt);
 
+    /**
+     * Sets read only mode.
+     * 0 means disable; -1 means always read only, no expire time;
+     * greater than 0 means read only duration second.
+     */
+    void setReadOnlyExpire(long long durationSecond);
+
+    /**
+     * Gets read only mode or ramain seconds.
+     * 0 means disable; -1 means always read only, no expire time;
+     * greater than 0 means read only mode reamin seconds.
+     */
+    long long getReadOnlyRemainSecond();
+
+    long long getReadOnlyExpire();
+
+    bool isEnabledReadOnly();
+
 private:
     /**
      * Type used to guard accesses and updates to the user cache.
@@ -399,6 +433,11 @@ private:
      * Manipulated via CacheGuard.
      */
     bool _isFetchPhaseBusy;
+
+    /**
+     * read only expire absolute time, 0 means disable read only
+     */
+    long long _readOnlyExpire;
 
     /**
      * Protects _userCache, _cacheGeneration, _version and _isFetchPhaseBusy.  Manipulated

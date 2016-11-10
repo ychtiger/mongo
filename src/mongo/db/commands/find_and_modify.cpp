@@ -333,6 +333,12 @@ public:
             return appendCommandStatus(result, allowedWriteStatus);
         }
 
+        // Builtin user support, forbid findAndModify on admin.system.users
+        Status checkStatus = checkCommands(txn, fullNs);
+        if (!checkStatus.isOK()) {
+            return appendCommandStatus(result, checkStatus);
+        }
+
         StatusWith<FindAndModifyRequest> parseStatus =
             FindAndModifyRequest::parseFromBSON(NamespaceString(fullNs), cmdObj);
         if (!parseStatus.isOK()) {

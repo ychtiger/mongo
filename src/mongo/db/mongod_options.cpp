@@ -106,6 +106,21 @@ Status addMongodOptions(moe::OptionSection* options) {
         .setSources(moe::SourceAllLegacy)
         .incompatibleWith("auth");
 
+    general_options.addOptionChaining("security.readonly.durationSecond", "readonly", moe::Long,
+            "value of read-only duration timeout (0=off -1=unlimited others=duration second)")
+        .setSources(moe::SourceYAMLConfig)
+        .setDefault(moe::Value(0));
+
+    general_options.addOptionChaining("security.whitelist.adminWhiteListPath",
+            "adminWhiteListPath",
+            moe::String,
+            "Absolute file path which stores admin whitelist");
+
+    general_options.addOptionChaining("security.whitelist.userWhiteListPath", 
+            "userWhiteListPath", 
+            moe::String,
+            "Absolute file path which stores user whitelist");
+
     // Way to enable or disable auth in JSON Config
     general_options
         .addOptionChaining(
@@ -400,6 +415,10 @@ Status addMongodOptions(moe::OptionSection* options) {
         moe::Int,
         "size to use (in MB) for replication op log. default is 5% of disk space "
         "(i.e. large is good)");
+
+    rs_options.addOptionChaining("replication.netvip", "netVip", moe::StringVector,
+            "List of net vip.")
+        .setSources(moe::SourceYAMLConfig);
 
     rs_options.addOptionChaining("replication.replSet",
                                  "replSet",
@@ -1027,6 +1046,38 @@ Status storeMongodOptions(const moe::Environment& params, const std::vector<std:
         params["security.authorization"].as<std::string>() == "enabled") {
         serverGlobalParams.isAuthEnabled = true;
     }
+    if (params.count("security.readonly.durationSecond")) {
+        long long duration = params["security.readonly.durationSecond"].as<long>();
+        if ( duration > 60 * 60 * 24 * 365) { // duration can't long than one year
+            return Status(ErrorCodes::BadValue, "read only can't keep longer than one year"
+                    "(value must less than 31536000) "
+                    "--security.readonly.durationSecond setting");
+        }
+        serverGlobalParams.readOnlyDurationSecond = duration;
+    }
+    if (params.count("security.whitelist.adminWhiteListPath")) {
+        std::string path = params["security.whitelist.adminWhiteListPath"].as<string>();
+        std::string errmsg;
+        if (!serverGlobalParams.adminWhiteList.parseFromFile(path, errmsg)) {
+            return Status(ErrorCodes::BadValue, errmsg);
+        }
+    }
+
+    // default whitelist is 0.0.0.0/0 to match all
+    // set default value when no config item or whilelist is empty
+    if (params.count("security.whitelist.userWhiteListPath")) {
+        std::string path = params["security.whitelist.userWhiteListPath"].as<string>();
+        std::string errmsg;
+        if (!serverGlobalParams.userWhiteList.parseFromFile(path, errmsg)) {
+            return Status(ErrorCodes::BadValue, errmsg);
+        }
+        if (serverGlobalParams.userWhiteList.isMatchNone()) {
+            serverGlobalParams.userWhiteList.setMatchAll();
+        }
+    } else {
+        serverGlobalParams.userWhiteList.setMatchAll();
+    }
+
     if (params.count("storage.mmapv1.quota.enforced")) {
         mmapv1GlobalOptions.quota = params["storage.mmapv1.quota.enforced"].as<bool>();
     }
@@ -1132,6 +1183,9 @@ Status storeMongodOptions(const moe::Environment& params, const std::vector<std:
     }
     if (params.count("pretouch")) {
         replSettings.pretouch = params["pretouch"].as<int>();
+    }
+    if (params.count("replication.netvip")) {
+        replSettings.netVip = params["replication.netvip"].as<std::vector<std::string> >();
     }
     if (params.count("replication.replSetName")) {
         replSettings.replSet = params["replication.replSetName"].as<string>().c_str();

@@ -31,6 +31,7 @@
 #include "mongo/db/query/explain.h"
 
 #include "mongo/base/owned_pointer_vector.h"
+#include "mongo/db/client.h"
 #include "mongo/db/exec/count_scan.h"
 #include "mongo/db/exec/distinct_scan.h"
 #include "mongo/db/exec/idhack.h"
@@ -313,6 +314,12 @@ void Explain::statsToBSON(const PlanStageStats& stats,
 
         if (verbosity >= ExplainCommon::EXEC_STATS) {
             bob->appendNumber("keysExamined", spec->keysExamined);
+        }
+    } else if (STAGE_ENSURE_SORTED == stats.stageType) {
+        EnsureSortedStats* spec = static_cast<EnsureSortedStats*>(stats.specific.get());
+
+        if (verbosity >= ExplainCommon::EXEC_STATS) {
+            bob->appendNumber("nDropped", spec->nDropped);
         }
     } else if (STAGE_FETCH == stats.stageType) {
         FetchStats* spec = static_cast<FetchStats*>(stats.specific.get());
@@ -685,7 +692,8 @@ void Explain::explainStages(PlanExecutor* exec,
         execBob.doneFast();
     }
 
-    generateServerInfo(out);
+    if (!exec->getOpCtx()->getClient()->isVipMode())
+        generateServerInfo(out);
 }
 
 // static

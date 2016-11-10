@@ -35,6 +35,7 @@
 
 #include "mongo/base/init.h"
 #include "mongo/base/status.h"
+#include "mongo/bson/util/bson_extract.h"
 #include "mongo/db/audit.h"
 #include "mongo/db/auth/action_type.h"
 #include "mongo/db/auth/authorization_manager.h"
@@ -85,6 +86,7 @@
 #include "mongo/db/stats/counters.h"
 #include "mongo/db/storage/storage_engine.h"
 #include "mongo/db/storage/storage_options.h"
+#include "mongo/logger/logger.h"
 #include "mongo/platform/atomic_word.h"
 #include "mongo/platform/process_id.h"
 #include "mongo/rpc/command_reply_builder.h"
@@ -398,6 +400,43 @@ static void receivedQuery(OperationContext* txn,
         audit::logQueryAuthzCheck(client, nss, q.query, status.code());
         uassertStatusOK(status);
 
+        // Builtin user support, filter builitin users for query
+        if (nss == std::string("admin.system.users") &&
+                !AuthorizationSession::get(client)->hasAuthByBuiltinAdmin()) {
+            // valid query may have following formats
+            // db.collection.find({x: 1})
+            // db.collection.find({$query: {x: 1}})
+            // db.collection.find({query: {x: 1}})
+            std::string queryName = "query";
+            BSONElement queryField = q.query[queryName];
+            if (!queryField.isABSONObj()) {
+                queryName = "$query";
+                queryField = q.query[queryName];
+            }
+
+            if (queryField.isABSONObj()) {
+                BSONObjBuilder b(64);
+                b.appendRegex(AuthorizationManager::USER_NAME_FIELD_NAME, UserName::CLOUD_FILTER, "i");
+                BSONObj subQuery = queryField.embeddedObject();
+                BSONObj newSubQuery = BSON("$and" << BSON_ARRAY(subQuery << b.obj()));
+
+                // rebuild new query object
+                BSONObjBuilder nb(64);
+                nb.append(queryName, newSubQuery);
+                BSONForEach( e, q.query ) {
+                    if (!str::equals(queryName.c_str() , e.fieldName())) {
+                        nb.append(e);
+                    }
+                }
+                q.query = nb.obj();
+            } else {
+                BSONObjBuilder b(64);
+                b.appendRegex(AuthorizationManager::USER_NAME_FIELD_NAME, UserName::CLOUD_FILTER, "i");
+                BSONObj query = BSON("$and" << BSON_ARRAY(q.query << b.obj()));
+                q.query = query;
+            }
+        }
+
         dbResponse.exhaustNS = runQuery(txn, q, nss, dbResponse.response);
     } catch (const AssertionException& exception) {
         dbResponse.response.reset();
@@ -513,15 +552,7 @@ void assembleResponse(OperationContext* txn,
     OpDebug& debug = currentOp.debug();
 
     long long logThreshold = serverGlobalParams.slowMS;
-    LogComponent responseComponent(LogComponent::kQuery);
-    if (op == dbInsert || op == dbDelete || op == dbUpdate) {
-        responseComponent = LogComponent::kWrite;
-    } else if (isCommand) {
-        responseComponent = LogComponent::kCommand;
-    }
-
-    bool shouldLog =
-        logger::globalLogDomain()->shouldLog(responseComponent, logger::LogSeverity::Debug(1));
+    bool shouldLogOpDebug = shouldLog(logger::LogSeverity::Debug(1));
 
     if (op == dbQuery) {
         if (isCommand) {
@@ -533,15 +564,14 @@ void assembleResponse(OperationContext* txn,
         receivedRpc(txn, c, dbresponse, m);
     } else if (op == dbGetMore) {
         if (!receivedGetMore(txn, dbresponse, m, currentOp))
-            shouldLog = true;
+            shouldLogOpDebug = true;
     } else if (op == dbMsg) {
         // deprecated - replaced by commands
         const char* p = dbmsg.getns();
 
         int len = strlen(p);
         if (len > 400)
-            log(LogComponent::kQuery) << curTimeMillis64() % 10000
-                                      << " long msg received, len:" << len << endl;
+            log() << curTimeMillis64() % 10000 << " long msg received, len:" << len << endl;
 
         if (strcmp("end", p) == 0)
             dbresponse.response.setData(opReply, "dbMsg end no longer supported");
@@ -559,10 +589,9 @@ void assembleResponse(OperationContext* txn,
                 logThreshold = 10;
                 receivedKillCursors(txn, m);
             } else if (op != dbInsert && op != dbUpdate && op != dbDelete) {
-                log(LogComponent::kQuery)
-                    << "    operation isn't supported: " << static_cast<int>(op) << endl;
+                log() << "    operation isn't supported: " << static_cast<int>(op) << endl;
                 currentOp.done();
-                shouldLog = true;
+                shouldLogOpDebug = true;
             } else {
                 if (remote != DBDirectClient::dummyHost) {
                     const ShardedConnectionInfo* connInfo = ShardedConnectionInfo::get(&c, false);
@@ -588,17 +617,15 @@ void assembleResponse(OperationContext* txn,
             }
         } catch (const UserException& ue) {
             LastError::get(c).setLastError(ue.getCode(), ue.getInfo().msg);
-            MONGO_LOG_COMPONENT(3, responseComponent) << " Caught Assertion in "
-                                                      << networkOpToString(op) << ", continuing "
-                                                      << ue.toString() << endl;
+            LOG(3) << " Caught Assertion in " << networkOpToString(op) << ", continuing "
+                   << ue.toString() << endl;
             debug.exceptionInfo = ue.getInfo();
         } catch (const AssertionException& e) {
             LastError::get(c).setLastError(e.getCode(), e.getInfo().msg);
-            MONGO_LOG_COMPONENT(3, responseComponent) << " Caught Assertion in "
-                                                      << networkOpToString(op) << ", continuing "
-                                                      << e.toString() << endl;
+            LOG(3) << " Caught Assertion in " << networkOpToString(op) << ", continuing "
+                   << e.toString() << endl;
             debug.exceptionInfo = e.getInfo();
-            shouldLog = true;
+            shouldLogOpDebug = true;
         }
     }
     currentOp.ensureStarted();
@@ -607,21 +634,22 @@ void assembleResponse(OperationContext* txn,
 
     logThreshold += currentOp.getExpectedLatencyMs();
 
-    if (shouldLog || debug.executionTime > logThreshold) {
+    if (shouldLogOpDebug || debug.executionTime > logThreshold) {
         Locker::LockerInfo lockerInfo;
         txn->lockState()->getLockerInfo(&lockerInfo);
 
-        MONGO_LOG_COMPONENT(0, responseComponent) << debug.report(currentOp, lockerInfo.stats);
+        log() << debug.report(currentOp, lockerInfo.stats);
+        if (debug.executionTime > logThreshold) {
+            audit::logSlowOp(&c, currentOp, lockerInfo.stats);
+        }
     }
 
     if (currentOp.shouldDBProfile(debug.executionTime)) {
         // Performance profiling is on
         if (txn->lockState()->isReadLocked()) {
-            MONGO_LOG_COMPONENT(1, responseComponent)
-                << "note: not profiling because recursive read lock";
+            LOG(1) << "note: not profiling because recursive read lock";
         } else if (lockedForWriting()) {
-            MONGO_LOG_COMPONENT(1, responseComponent)
-                << "note: not profiling because doing fsync+lock";
+            LOG(1) << "note: not profiling because doing fsync+lock";
         } else {
             profile(txn, op);
         }
@@ -687,6 +715,15 @@ void receivedUpdate(OperationContext* txn, const NamespaceString& nsString, Mess
         AuthorizationSession::get(client)->checkAuthForUpdate(nsString, query, toupdate, upsert);
     audit::logUpdateAuthzCheck(client, nsString, query, toupdate, upsert, multi, status.code());
     uassertStatusOK(status);
+
+    // Builtin user support, filter builitin users for update
+    if (nsString == std::string("admin.system.users") &&
+            !AuthorizationSession::get(client)->hasAuthByBuiltinAdmin()) {
+        BSONObjBuilder b(64);
+        b.appendRegex(AuthorizationManager::USER_NAME_FIELD_NAME, UserName::CLOUD_FILTER, "i");
+        BSONObj q = BSON("$and" << BSON_ARRAY(query << b.obj()));
+        query = q;
+    }
 
     UpdateRequest request(nsString);
     request.setUpsert(upsert);
@@ -835,6 +872,15 @@ void receivedDelete(OperationContext* txn, const NamespaceString& nsString, Mess
     Status status = AuthorizationSession::get(client)->checkAuthForDelete(nsString, pattern);
     audit::logDeleteAuthzCheck(client, nsString, pattern, status.code());
     uassertStatusOK(status);
+
+    // Builtin user support, filter builitin users for delete
+    if (nsString == std::string("admin.system.users") &&
+            !AuthorizationSession::get(client)->hasAuthByBuiltinAdmin()) {
+        BSONObjBuilder b(64);
+        b.appendRegex(AuthorizationManager::USER_NAME_FIELD_NAME, UserName::CLOUD_FILTER, "i");
+        BSONObj q = BSON("$and" << BSON_ARRAY(pattern << b.obj()));
+        pattern = q;
+    }
 
     DeleteRequest request(nsString);
     request.setQuery(pattern);
@@ -996,13 +1042,6 @@ void insertMultiVector(OperationContext* txn,
                        CurOp& op,
                        vector<BSONObj>::iterator begin,
                        vector<BSONObj>::iterator end) {
-    for (vector<BSONObj>::iterator it = begin; it != end; it++) {
-        StatusWith<BSONObj> fixed = fixDocumentForInsert(*it);
-        uassertStatusOK(fixed.getStatus());
-        if (!fixed.getValue().isEmpty())
-            *it = fixed.getValue();
-    }
-
     try {
         WriteUnitOfWork wunit(txn);
         Collection* collection = ctx.db()->getCollection(ns);
@@ -1037,6 +1076,13 @@ NOINLINE_DECL void insertMulti(OperationContext* txn,
     vector<BSONObj>::iterator chunkBegin = docs.begin();
     int64_t chunkCount = 0;
     int64_t chunkSize = 0;
+
+    for (vector<BSONObj>::iterator it = docs.begin(); it != docs.end(); it++) {
+        StatusWith<BSONObj> fixed = fixDocumentForInsert(*it);
+        uassertStatusOK(fixed.getStatus());
+        if (!fixed.getValue().isEmpty())
+            *it = fixed.getValue();
+    }
 
     for (vector<BSONObj>::iterator it = docs.begin(); it != docs.end(); it++) {
         chunkSize += (*it).objsize();
@@ -1185,6 +1231,25 @@ void receivedInsert(OperationContext* txn, const NamespaceString& nsString, Mess
         uassertStatusOK(status);
     }
 
+    // Builtin user support, forbid insert builtin user to admin.system.users
+    // first user could be builtin user
+    if (nsString == std::string("admin.system.users") &&
+            !AuthorizationSession::get(txn->getClient())->shouldAllowLocalhost() &&
+            !AuthorizationSession::get(txn->getClient())->hasAuthByBuiltinAdmin()) {
+        for (unsigned int i = 0; i < multi.size(); i++) {
+            std::string userName;
+            Status status = bsonExtractStringField(multi[i], "user", &userName);
+            if (status.isOK() && UserName(userName, "").isBuiltinUser()) {
+                HostAndPort remote = txn->getClient()->getRemote();
+                log() << "unauthorized request to insert admin.system.users from " <<
+                    remote.host() << ":" << remote.port() << endl;
+                Status status(ErrorCodes::Unauthorized, "Unauthorized");
+                audit::logInsertAuthzCheck(txn->getClient(), nsString, multi[i], status.code());
+                uassertStatusOK(status);
+            }
+        }
+    }
+
     const bool keepGoing = d.reservedField() & InsertOption_ContinueOnError;
     {
         ScopedTransaction transaction(txn, MODE_IX);
@@ -1319,6 +1384,9 @@ void exitCleanly(ExitCode code) {
 
 NOINLINE_DECL void dbexit(ExitCode rc, const char* why) {
     audit::logShutdown(&cc());
+
+    log() << "dbexit: going to flush auditlog..." << endl;
+    logger::globalAuditLogDomain()->flush();
 
     log(LogComponent::kControl) << "dbexit: " << why << " rc: " << rc;
 

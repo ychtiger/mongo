@@ -31,6 +31,7 @@
 #include "mongo/platform/process_id.h"
 #include "mongo/s/catalog/catalog_manager.h"
 #include "mongo/util/net/listen.h"  // For DEFAULT_MAX_CONN
+#include "mongo/util/net/whitelist.h"
 
 namespace mongo {
 
@@ -56,10 +57,14 @@ struct ServerGlobalParams {
           socket("/tmp"),
           maxConns(DEFAULT_MAX_CONN),
           unixSocketPermissions(DEFAULT_UNIX_PERMS),
+          auditOpFilter(0),
+          auditAuthSuccess(false),
+          auditVipOnly(true),
           logAppend(false),
           logRenameOnRotate(true),
           logWithSyslog(false),
-          isHttpInterfaceEnabled(false) {
+          isHttpInterfaceEnabled(false),
+          readOnlyDurationSecond(0) {
         started = time(0);
     }
 
@@ -104,6 +109,12 @@ struct ServerGlobalParams {
     std::string pidFile;  // Path to pid file, or empty if none.
 
     std::string logpath;     // Path to log file, if logging to a file; otherwise, empty.
+    std::string auditLogpath;// Path to audit log file, if logging to a file; otherwise, empty.
+    std::string auditLogFormat;// Format of audit log
+    std::string auditOpFilterStr; // Filter ops that need to be audited, string format.
+    int  auditOpFilter;      // Bitwise or result of ops that need to be audited, parsed from auditOpFilterStr.
+    bool auditAuthSuccess;   // True if audit authorization success requests.
+    bool auditVipOnly;       // True if audit vip only for CRUD requests.
     bool logAppend;          // True if logging to a file in append mode.
     bool logRenameOnRotate;  // True if logging should rename log files on rotate
     bool logWithSyslog;      // True if logging to syslog; must not be set if logpath is set.
@@ -129,6 +140,7 @@ struct ServerGlobalParams {
     BSONArray argvArray;
     BSONObj parsedOpts;
     bool isAuthEnabled = false;
+
     AtomicInt32 clusterAuthMode;  // --clusterAuthMode, the internal cluster auth mode
 
     enum ClusterAuthModes {
@@ -153,6 +165,22 @@ struct ServerGlobalParams {
         */
         ClusterAuthMode_x509
     };
+    /**
+     * read only duration second
+     */
+    long long readOnlyDurationSecond;
+
+    /**
+     * Host in adminWhiteList can always access instance via vip
+     * It's not limited by 'maxIncomingConnections'
+     */
+    WhiteList adminWhiteList;
+
+    /**
+     * Only hosts in userWhiteList can access instance
+     */
+    WhiteList userWhiteList;
+
 };
 
 extern ServerGlobalParams serverGlobalParams;

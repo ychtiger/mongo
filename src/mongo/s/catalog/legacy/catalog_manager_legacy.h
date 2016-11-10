@@ -52,7 +52,7 @@ public:
      * Initializes the catalog manager with the hosts, which will be used as a configuration
      * server. Can only be called once for the lifetime.
      */
-    Status init(const ConnectionString& configCS);
+    Status init(const ConnectionString& configCS, const std::string& distLockProcessId);
 
     /**
      * Can terminate the server if called more than once.
@@ -204,7 +204,7 @@ private:
     ConnectionString _configServerConnectionString;
     std::vector<ConnectionString> _configServers;
 
-    // Distribted lock manager singleton.
+    // Distributed lock manager singleton.
     std::unique_ptr<DistLockManager> _distLockManager;
 
     // protects _inShutdown, _consistentFromLastCheck; used by _consistencyCheckerCV

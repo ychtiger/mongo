@@ -47,6 +47,9 @@
 
 namespace mongo {
 
+typedef std::set<std::string> CommandSet;
+extern CommandSet forbiddenCommands;
+
 class BSONObj;
 class BSONObjBuilder;
 class Client;
@@ -257,6 +260,11 @@ public:
         @param oldName an optional old, deprecated name for the command
     */
     Command(StringData _name, bool webUI = false, StringData oldName = StringData());
+
+    /**
+     * internal check command before run
+     */
+    virtual Status checkCommands(OperationContext* txn, const std::string& ns) const;
 
 protected:
     /**

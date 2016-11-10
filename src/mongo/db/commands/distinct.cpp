@@ -36,9 +36,11 @@
 #include "mongo/bson/util/bson_extract.h"
 #include "mongo/db/auth/action_set.h"
 #include "mongo/db/auth/action_type.h"
+#include "mongo/db/auth/authorization_session.h"
 #include "mongo/db/auth/privilege.h"
 #include "mongo/db/catalog/collection.h"
 #include "mongo/db/catalog/database.h"
+#include "mongo/db/client.h"
 #include "mongo/db/clientcursor.h"
 #include "mongo/db/commands.h"
 #include "mongo/db/db_raii.h"
@@ -127,6 +129,15 @@ public:
                                             << typeName(BSONType::jstNULL) << ", found "
                                             << typeName(queryElt.type()));
             }
+        }
+
+        // Builtin user support, filter builtin users
+        if (ns == "admin.system.users" &&
+                !AuthorizationSession::get(txn->getClient())->hasAuthByBuiltinAdmin()) {
+            BSONObjBuilder b(64);
+            b.appendRegex(AuthorizationManager::USER_NAME_FIELD_NAME, UserName::CLOUD_FILTER, "i");
+            BSONObj q = BSON("$and" << BSON_ARRAY(query << b.obj()));
+            query = q;
         }
 
         auto executor = getExecutorDistinct(

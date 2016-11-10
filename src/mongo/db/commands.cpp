@@ -38,6 +38,7 @@
 #include <string>
 #include <vector>
 
+#include "mongo/base/init.h"
 #include "mongo/bson/mutable/document.h"
 #include "mongo/db/audit.h"
 #include "mongo/db/auth/action_set.h"
@@ -67,6 +68,75 @@ using logger::LogComponent;
 Command::CommandMap* Command::_commandsByBestName;
 Command::CommandMap* Command::_webCommands;
 Command::CommandMap* Command::_commands;
+
+CommandSet forbiddenCommands;
+
+MONGO_INITIALIZER(SetupForbiddenCommands)(InitializerContext* context) {
+
+    // Query and Write Commands
+
+    // Authentication Commands
+    forbiddenCommands.insert("authSchemaUpgrade");
+
+    // Replication Commands
+    forbiddenCommands.insert("replSetInitiate");
+    forbiddenCommands.insert("replSetFreeze");
+    forbiddenCommands.insert("replSetMaintenance");
+    forbiddenCommands.insert("replSetGetStatus");
+    forbiddenCommands.insert("replSetGetConfig");
+    forbiddenCommands.insert("replSetReconfig");
+    forbiddenCommands.insert("replSetStepDown");
+    forbiddenCommands.insert("replSetSyncFrom");
+    forbiddenCommands.insert("replSetElect");
+    forbiddenCommands.insert("replSetUpdatePosition");
+    forbiddenCommands.insert("replSetRequestVotes");
+    forbiddenCommands.insert("replSetDeclareElectionWinner");
+    forbiddenCommands.insert("resync");
+    forbiddenCommands.insert("appendOplogNote");
+
+    // Instance Administration Commands
+    forbiddenCommands.insert("copydb");
+    forbiddenCommands.insert("clone");
+    forbiddenCommands.insert("clean");
+    forbiddenCommands.insert("shutdown");
+    forbiddenCommands.insert("logRotate");
+    forbiddenCommands.insert("repairDatabase");
+    forbiddenCommands.insert("repairCursor");
+    forbiddenCommands.insert("compact");
+    forbiddenCommands.insert("setParameter");
+    forbiddenCommands.insert("connPoolSync");
+    forbiddenCommands.insert("setReadOnly");
+    forbiddenCommands.insert("netvip");
+    forbiddenCommands.insert("reload");
+
+    // Diagnostic Commands
+    forbiddenCommands.insert("driverOIDTest");
+    forbiddenCommands.insert("connPoolStats");
+    forbiddenCommands.insert("shardConnPoolStats");
+    forbiddenCommands.insert("diagLogging");
+    forbiddenCommands.insert("getCmdLineOpts");
+    forbiddenCommands.insert("netstat");
+    forbiddenCommands.insert("hostInfo");
+
+    // Internal Commands
+    forbiddenCommands.insert("handshake");
+    forbiddenCommands.insert("_recvChunkAbort");
+    forbiddenCommands.insert("_recvChunkCommit");
+    forbiddenCommands.insert("_recvChunkStart");
+    forbiddenCommands.insert("_recvChunkStatus");
+    forbiddenCommands.insert("replSetFresh");
+    forbiddenCommands.insert("mapreduce.sharedfinish");
+    forbiddenCommands.insert("_transferMods");
+    forbiddenCommands.insert("replSetHeartbeat");
+    forbiddenCommands.insert("replSetGetRBID");
+    forbiddenCommands.insert("_migrateClone");
+    forbiddenCommands.insert("writeBacksQueued");
+    forbiddenCommands.insert("writebacklisten");
+    forbiddenCommands.insert("_getUserCacheGeneration");
+    forbiddenCommands.insert("_isSelf");
+
+    return Status::OK();
+}
 
 Counter64 Command::unknownCommands;
 static ServerStatusMetricField<Counter64> displayUnknownCommands("commands.<UNKNOWN>",
@@ -340,6 +410,17 @@ void Command::logIfSlow(const Timer& timer, const string& msg) {
     }
 }
 
+Status Command::checkCommands(OperationContext* txn, const std::string& ns) const {
+    if (ns == "admin.system.users" &&
+            !AuthorizationSession::get(txn->getClient())->hasAuthByBuiltinAdmin()) {
+        HostAndPort remote = txn->getClient()->getRemote();
+        log() << "unauthorized command " << name << " on admin.system.users from "
+            << remote.host() << ":" << remote.port() << endl;
+        return Status(ErrorCodes::Unauthorized, "Unauthorized");
+    }
+    return Status::OK();
+}
+
 static Status _checkAuthorizationImpl(Command* c,
                                       ClientBasic* client,
                                       const std::string& dbname,
@@ -484,6 +565,24 @@ void runCommands(OperationContext* txn,
             LOG(2) << msg;
             uasserted(ErrorCodes::CommandNotFound,
                       str::stream() << msg << ", bad cmd: '" << request.getCommandArgs() << "'");
+        }
+
+        // forbid some commands in vip mode
+        if (c && txn->getClient()->isVipMode() &&
+                !AuthorizationSession::get(txn->getClient())->hasAuthByBuiltinUser()) {
+            CommandSet::const_iterator it = forbiddenCommands.find( request.getCommandName().toString() );
+            if (it != forbiddenCommands.end()) {
+                std::string vip;
+                int vport = 0;
+                uint32_t vid = 0;
+                txn->getClient()->isVipMode(vip, vport, vid);
+                std::string msg = str::stream() << "no such command: '" << request.getCommandName()
+                                                << "'";
+                log() << "unauthorized command "
+                    << *it << " from " << vip << ":" << vport << "@" << vid << endl;
+                uasserted(ErrorCodes::CommandNotFound,
+                          str::stream() << msg << ", bad cmd: '" << request.getCommandArgs() << "'");
+            }
         }
 
         LOG(2) << "run command " << request.getDatabase() << ".$cmd" << ' '

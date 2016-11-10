@@ -56,6 +56,10 @@ public:
         return _allowLocalhostReturnValue;
     }
 
+    virtual bool isLocalHostConnection() const {
+        return _isLocalHostConnectionValue;
+    }
+
     virtual bool serverIsArbiter() const {
         return _serverIsArbiterReturnValue;
     }
@@ -70,9 +74,14 @@ public:
 
     virtual void startRequest(OperationContext* txn) {}
 
+    virtual bool isEnabledReadOnly() const {
+        return false;
+    }
+
 private:
     bool _ignoreAuthChecksReturnValue;
     bool _allowLocalhostReturnValue;
+    bool _isLocalHostConnectionValue;
     bool _serverIsArbiterReturnValue;
 };
 

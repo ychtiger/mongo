@@ -49,13 +49,23 @@ const stdx::chrono::seconds kDefaultSocketTimeout(30);
 const milliseconds kDefaultPingInterval(30 * 1000);
 }  // unnamed namespace
 
-LegacyDistLockManager::LegacyDistLockManager(ConnectionString configServer)
-    : _configServer(std::move(configServer)), _isStopped(false), _pingerEnabled(true) {}
+bool LegacyDistLockManager::_pingerEnabled = true;
+
+LegacyDistLockManager::LegacyDistLockManager(ConnectionString configServer,
+                                             const std::string& processId)
+    : _configServer(std::move(configServer)),
+      _processId(processId),
+      _isStopped(false),
+      _checkedForSkew(false) {}
 
 void LegacyDistLockManager::startUp() {
     stdx::lock_guard<stdx::mutex> sl(_mutex);
     invariant(!_pinger);
     _pinger = stdx::make_unique<LegacyDistLockPinger>();
+
+    if (_pingerEnabled) {
+        uassertStatusOK(_pinger->startup(_configServer, _processId, kDefaultPingInterval));
+    }
 }
 
 void LegacyDistLockManager::shutDown(OperationContext* txn, bool allowNetworking) {
@@ -71,13 +81,17 @@ void LegacyDistLockManager::shutDown(OperationContext* txn, bool allowNetworking
     }
 }
 
+std::string LegacyDistLockManager::getProcessID() {
+    return _processId;
+}
+
 StatusWith<DistLockManager::ScopedDistLock> LegacyDistLockManager::lock(
     OperationContext* txn,
     StringData name,
     StringData whyMessage,
     milliseconds waitFor,
     milliseconds lockTryInterval) {
-    auto distLock = stdx::make_unique<DistributedLock>(_configServer, name.toString());
+    auto distLock = stdx::make_unique<DistributedLock>(_configServer, name.toString(), _processId);
 
     {
         stdx::lock_guard<stdx::mutex> sl(_mutex);
@@ -86,11 +100,16 @@ StatusWith<DistLockManager::ScopedDistLock> LegacyDistLockManager::lock(
             return Status(ErrorCodes::LockBusy, "legacy distlock manager is stopped");
         }
 
-        if (_pingerEnabled) {
-            auto pingStatus = _pinger->startPing(*(distLock.get()), kDefaultPingInterval);
-            if (!pingStatus.isOK()) {
-                return pingStatus;
+        if (!_checkedForSkew && _pingerEnabled) {
+            // Check for clock skew the first time this DistLockManager takes a lock.
+            if (distLock->isRemoteTimeSkewed()) {
+                return Status(ErrorCodes::DistributedClockSkewed,
+                              str::stream() << "clock skew of the cluster "
+                                            << _configServer.toString()
+                                            << " is too far out of bounds "
+                                            << "to allow distributed locking.");
             }
+            _checkedForSkew = true;
         }
     }
 
@@ -219,8 +238,7 @@ Status LegacyDistLockManager::checkStatus(OperationContext* txn, const DistLockH
     return distLock->checkStatus(durationCount<Seconds>(kDefaultSocketTimeout));
 }
 
-void LegacyDistLockManager::enablePinger(bool enable) {
-    stdx::lock_guard<stdx::mutex> sl(_mutex);
-    _pingerEnabled = enable;
+void LegacyDistLockManager::unlockAll(OperationContext* txn, const std::string& processID) {
+    fassertFailed(34367);  // Only supported for CSRS
 }
 }

@@ -109,10 +109,37 @@ public:
         std::unique_ptr<MessagingPortWithHandler> portWithHandler(
             new MessagingPortWithHandler(psocket, _handler, connectionId));
 
-        if (!Listener::globalTicketHolder.tryAcquire()) {
-            log() << "connection refused because too many open connections: "
-                  << Listener::globalTicketHolder.used() << endl;
-            return;
+        // init vipMode after accept()
+        portWithHandler->initVipMode();
+
+        // the counter used when disconnected must be same with that used when connected
+        // because whitelist may change at runtime, so we must init the whitelist state
+        // after socket connected and store the state
+        if (serverGlobalParams.adminWhiteList.include(portWithHandler->remote().host())) {
+            portWithHandler->setInAdminWhiteList();
+        } else if (serverGlobalParams.userWhiteList.include(portWithHandler->remote().host())) {
+            portWithHandler->setInUserWhiteList();
+        }
+
+        // access from internal network or in adminWhiteList
+        if (!portWithHandler->isVipMode() || portWithHandler->inAdminWhiteList()) {
+            if (!Listener::internalTicketHolder.tryAcquire()) {
+                log() << "connection refused because too many open internal connections: "
+                    << Listener::internalTicketHolder.used() << endl;
+                return;
+            }
+        } else {
+            if (!portWithHandler->inUserWhiteList()) {
+                log() << "connection refused because client ip " << 
+                    portWithHandler->remote().host() << " not in user whitelist" << endl;
+                return;
+            }
+
+            if (!Listener::globalTicketHolder.tryAcquire()) {
+                log() << "connection refused because too many open connections: "
+                    << Listener::globalTicketHolder.used() << endl;
+                return;
+            }
         }
 
         try {
@@ -159,7 +186,11 @@ public:
             portWithHandler.release();
             sleepAfterClosingPort.Dismiss();
         } catch (...) {
-            Listener::globalTicketHolder.release();
+            if (!portWithHandler->isVipMode() || portWithHandler->inAdminWhiteList()) {
+                Listener::internalTicketHolder.release();
+            } else {
+                Listener::globalTicketHolder.release();
+            }
             log() << "failed to create thread after accepting new connection, closing connection";
         }
     }
@@ -196,8 +227,6 @@ private:
      * @return NULL
      */
     static void* handleIncomingMsg(void* arg) {
-        TicketHolderReleaser connTicketReleaser(&Listener::globalTicketHolder);
-
         invariant(arg);
         unique_ptr<MessagingPortWithHandler> portWithHandler(
             static_cast<MessagingPortWithHandler*>(arg));
@@ -218,7 +247,7 @@ private:
 
                 if (!portWithHandler->recv(m)) {
                     if (!serverGlobalParams.quiet) {
-                        int conns = Listener::globalTicketHolder.used() - 1;
+                        int conns = Listener::globalTicketHolder.used() + Listener::internalTicketHolder.used() - 1;
                         const char* word = (conns == 1 ? " connection" : " connections");
                         log() << "end connection " << portWithHandler->psock->remoteString() << " ("
                               << conns << word << " now open)" << endl;
@@ -255,6 +284,12 @@ private:
         if (manager)
             manager->cleanupThreadLocals();
 #endif
+
+        if (!portWithHandler->isVipMode() || portWithHandler->inAdminWhiteList()) {
+            Listener::internalTicketHolder.release();
+        } else {
+            Listener::globalTicketHolder.release();
+        }
 
         return NULL;
     }

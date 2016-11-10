@@ -50,7 +50,7 @@ class ClientBasic : public Decorable<ClientBasic> {
     MONGO_DISALLOW_COPYING(ClientBasic);
 
 public:
-    bool getIsLocalHostConnection() {
+    bool getIsLocalHostConnection() const {
         if (!hasRemote()) {
             return false;
         }
@@ -63,6 +63,10 @@ public:
     HostAndPort getRemote() const {
         verify(_messagingPort);
         return _messagingPort->remote();
+    }
+    HostAndPort getLocal() const {
+        verify(_messagingPort);
+        return _messagingPort->local();
     }
 
     /**
@@ -80,6 +84,20 @@ public:
     }
 
     static ClientBasic* getCurrent();
+
+    bool isVipMode() const {
+        if (_messagingPort) {
+            return _messagingPort->isVipMode();
+        }
+        return false;
+    }
+
+    bool isVipMode(std::string& vip, int& vport, uint32_t& vid) const {
+        if (_messagingPort) {
+            return _messagingPort->isVipMode(vip, vport, vid);
+        }
+        return false;
+    }
 
 protected:
     ClientBasic(ServiceContext* serviceContext, AbstractMessagingPort* messagingPort);

@@ -174,6 +174,11 @@ PrivilegeVector AuthorizationSession::getDefaultPrivileges() {
         return defaultPrivileges;
     }
 
+    // some special commands no need auth to execute from localhost
+    if (_externalState->isLocalHostConnection()) {
+        return bypassPrivileges;
+    }
+
     return defaultPrivileges;
 }
 
@@ -556,6 +561,21 @@ void AuthorizationSession::_buildAuthenticatedRolesVector() {
 bool AuthorizationSession::_isAuthorizedForPrivilege(const Privilege& privilege) {
     const ResourcePattern& target(privilege.getResourcePattern());
 
+    // forbid some special collection access
+    if (cc().isVipMode() &&
+            !hasAuthByBuiltinUser()) {
+        if (target.isExactNamespacePattern() &&
+                forbiddenCollections.find(target.ns().ns()) != forbiddenCollections.end()) {
+            std::string vip;
+            int vport = 0;
+            uint32_t vid = 0;
+            cc().isVipMode(vip, vport, vid);
+            log() << "unauthorized access to " <<
+                target.ns().ns() << " from " << vip << ":" << vport << "@" << vid << std::endl;
+            return false;
+        }
+    }
+
     ResourcePattern resourceSearchList[resourceSearchListCapacity];
     const int resourceSearchListLength = buildResourceSearchList(target, resourceSearchList);
 
@@ -576,11 +596,20 @@ bool AuthorizationSession::_isAuthorizedForPrivilege(const Privilege& privilege)
         }
     }
 
+    bool isReadOnly = _externalState->isEnabledReadOnly();
+
     for (UserSet::iterator it = _authenticatedUsers.begin(); it != _authenticatedUsers.end();
          ++it) {
         User* user = *it;
         for (int i = 0; i < resourceSearchListLength; ++i) {
             ActionSet userActions = user->getActionsForResource(resourceSearchList[i]);
+            if (isReadOnly) {
+                if (!user->getName().isBuiltinUser()) {
+                    LOG(5) << "Remove readOnlyAction set from "
+                        << "authed privileges of user for " << user->getName();
+                    userActions.removeAllActionsFromSet(readOnlyAvoidActions);
+                }
+            }
             unmetRequirements.removeAllActionsFromSet(userActions);
 
             if (unmetRequirements.empty())
@@ -616,6 +645,32 @@ void AuthorizationSession::clearImpersonatedUserData() {
 
 bool AuthorizationSession::isImpersonating() const {
     return _impersonationFlag;
+}
+
+bool AuthorizationSession::hasAuthByBuiltinUser() const {
+    UserNameIterator it = _authenticatedUsers.getNames();
+    while (it.more()) {
+        const UserName& user = it.next();
+        if (user.isBuiltinUser() || user == internalSecurity.user->getName()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool AuthorizationSession::hasAuthByBuiltinAdmin() const {
+    UserNameIterator it = _authenticatedUsers.getNames();
+    while (it.more()) {
+        const UserName& user = it.next();
+        if (user.isBuiltinAdmin() || user == internalSecurity.user->getName()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool AuthorizationSession::shouldAllowLocalhost() const {
+    return _externalState->shouldAllowLocalhost();
 }
 
 }  // namespace mongo

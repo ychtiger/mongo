@@ -66,6 +66,8 @@ public:
     // shouldAllowLocalhost or we could ignore auth checks incorrectly.
     virtual bool shouldAllowLocalhost() const = 0;
 
+    virtual bool isLocalHostConnection() const = 0;
+
     // Returns true if this connection should allow extra server configuration actions under
     // the localhost exception. This condition is used to allow special privileges on arbiters.
     // See SERVER-5479 for details on when this may be removed.
@@ -74,6 +76,9 @@ public:
     // Should be called at the beginning of every new request.  This performs the checks
     // necessary to determine if localhost connections should be given full access.
     virtual void startRequest(OperationContext* txn) = 0;
+
+    // Should be called at check privilege. if true, mongod will avoid any write request
+    virtual bool isEnabledReadOnly() const = 0;
 
 protected:
     // This class should never be instantiated directly.

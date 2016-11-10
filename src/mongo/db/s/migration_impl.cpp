@@ -80,6 +80,13 @@ WriteConcernOptions getDefaultWriteConcernForMigration() {
     return WriteConcernOptions(1, WriteConcernOptions::NONE, 0);
 }
 
+BSONObj createRecvChunkCommitRequest(const MigrationSessionId& sessionId) {
+    BSONObjBuilder builder;
+    builder.append("_recvChunkCommit", 1);
+    sessionId.append(&builder);
+    return builder.obj();
+}
+
 MONGO_FP_DECLARE(failMigrationCommit);
 MONGO_FP_DECLARE(hangBeforeLeavingCriticalSection);
 MONGO_FP_DECLARE(failMigrationConfigWritePrepare);
@@ -276,7 +283,7 @@ ChunkMoveOperationState::acquireMoveMetadata() {
     return &_distLockStatus->getValue();
 }
 
-Status ChunkMoveOperationState::commitMigration() {
+Status ChunkMoveOperationState::commitMigration(const MigrationSessionId& sessionId) {
     invariant(_distLockStatus.is_initialized());
     invariant(_distLockStatus->isOK());
 
@@ -288,6 +295,7 @@ Status ChunkMoveOperationState::commitMigration() {
 
     Status startStatus = ShardingStateRecovery::startMetadataOp(_txn);
     if (!startStatus.isOK()) {
+        warning() << "Failed to write sharding state recovery document" << causedBy(startStatus);
         return startStatus;
     }
 
@@ -320,7 +328,7 @@ Status ChunkMoveOperationState::commitMigration() {
 
     try {
         ScopedDbConnection connTo(_toShardCS, 35.0);
-        connTo->runCommand("admin", BSON("_recvChunkCommit" << 1), res);
+        connTo->runCommand("admin", createRecvChunkCommitRequest(sessionId), res);
         connTo.done();
         recvChunkCommitStatus = getStatusFromCommandResult(res);
     } catch (const DBException& e) {
@@ -466,7 +474,6 @@ Status ChunkMoveOperationState::commitMigration() {
                                   shardingState->getConfigServer(_txn).toString());
         }
     } catch (const DBException& ex) {
-        warning() << ex << migrateLog;
         applyOpsStatus = ex.toStatus();
     }
 
@@ -503,7 +510,8 @@ Status ChunkMoveOperationState::commitMigration() {
         // If the commit did not make it, currently the only way to fix this state is to
         // bounce the mongod so that the old state (before migrating) is brought in.
 
-        warning() << "moveChunk commit outcome ongoing" << migrateLog;
+        warning() << "moveChunk commit failed and metadata will be revalidated"
+                  << causedBy(applyOpsStatus) << migrateLog;
         sleepsecs(10);
 
         // Look for the chunk in this shard whose version got bumped. We assume that if that
@@ -577,9 +585,11 @@ std::shared_ptr<CollectionMetadata> ChunkMoveOperationState::getCollMetadata() c
     return _collMetadata;
 }
 
-Status ChunkMoveOperationState::start(BSONObj shardKeyPattern) {
+Status ChunkMoveOperationState::start(const MigrationSessionId& sessionId,
+                                      const BSONObj& shardKeyPattern) {
     auto migrationSourceManager = ShardingState::get(_txn)->migrationSourceManager();
-    if (!migrationSourceManager->start(_txn, _nss.ns(), _minKey, _maxKey, shardKeyPattern)) {
+    if (!migrationSourceManager->start(
+            _txn, sessionId, _nss.ns(), _minKey, _maxKey, shardKeyPattern)) {
         return {ErrorCodes::ConflictingOperationInProgress,
                 "Not starting chunk migration because another migration is already in progress "
                 "from this shard"};

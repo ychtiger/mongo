@@ -501,6 +501,16 @@ void IndexScanNode::computeProperties() {
             }
             equalityFields.insert(oil.name);
         }
+    } else {
+        BSONObjIterator keyIter(indexKeyPattern);
+        BSONObjIterator startIter(bounds.startKey);
+        BSONObjIterator endIter(bounds.endKey);
+        while (keyIter.more() && startIter.more() && endIter.more()) {
+            BSONElement key = keyIter.next();
+            if (startIter.next() == endIter.next()) {
+                equalityFields.insert(key.fieldName());
+            }
+        }
     }
 
     if (equalityFields.empty()) {
@@ -912,6 +922,30 @@ QuerySolutionNode* CountNode::clone() const {
     copy->startKeyInclusive = this->startKeyInclusive;
     copy->endKey = this->endKey;
     copy->endKeyInclusive = this->endKeyInclusive;
+
+    return copy;
+}
+
+//
+// EnsureSortedNode
+//
+
+void EnsureSortedNode::appendToString(mongoutils::str::stream* ss, int indent) const {
+    addIndent(ss, indent);
+    *ss << "ENSURE_SORTED\n";
+    addIndent(ss, indent + 1);
+    *ss << "pattern = " << pattern.toString() << '\n';
+    addCommon(ss, indent);
+    addIndent(ss, indent + 1);
+    *ss << "Child:" << '\n';
+    children[0]->appendToString(ss, indent + 2);
+}
+
+QuerySolutionNode* EnsureSortedNode::clone() const {
+    EnsureSortedNode* copy = new EnsureSortedNode();
+    cloneBaseData(copy);
+
+    copy->pattern = this->pattern;
 
     return copy;
 }

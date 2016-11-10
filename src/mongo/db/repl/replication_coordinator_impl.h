@@ -60,6 +60,10 @@ class Timer;
 template <typename T>
 class StatusWith;
 
+namespace executor {
+struct ConnectionPoolStats;
+}  // namespace executor
+
 namespace rpc {
 class ReplSetMetadata;
 }  // namespace rpc
@@ -288,6 +292,12 @@ public:
 
     virtual void summarizeAsHtml(ReplSetHtmlSummary* s) override;
 
+    virtual void setNetVip(const std::vector<HostAndPort> &vips);
+
+    virtual Status setNetVip(const std::vector<std::string> &netVipString);
+
+    virtual std::vector<HostAndPort> getNetVip() const;
+
     virtual void dropAllSnapshots() override;
     /**
      * Get current term from topology coordinator
@@ -307,7 +317,7 @@ public:
     virtual void waitUntilSnapshotCommitted(OperationContext* txn,
                                             const SnapshotName& untilSnapshot) override;
 
-    virtual void appendConnectionStats(BSONObjBuilder* b) override;
+    virtual void appendConnectionStats(executor::ConnectionPoolStats* stats) const override;
 
     virtual size_t getNumUncommittedSnapshots() override;
 
@@ -1128,7 +1138,8 @@ private:
      * Reset the term of last vote to 0 to prevent any node from voting for term 0.
      * Blocking until last vote write finishes. Must be called without holding _mutex.
      */
-    void _resetElectionInfoOnProtocolVersionUpgrade(const ReplicaSetConfig& newConfig);
+    void _resetElectionInfoOnProtocolVersionUpgrade(const ReplicaSetConfig& oldConfig,
+                                                    const ReplicaSetConfig& newConfig);
 
     /**
      * Schedules work and returns handle to callback.
@@ -1386,6 +1397,12 @@ private:
 
     // Cached copy of the current config protocol version.
     AtomicInt64 _protVersion;  // (S)
+
+    // Net VIP ip list
+    // just storage and query
+    mutable boost::mutex _netVipMutex;
+    std::vector<HostAndPort> _netVip;
+
 };
 
 }  // namespace repl

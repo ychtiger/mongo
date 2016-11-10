@@ -49,6 +49,7 @@ public:
     virtual HostAndPort remote() const = 0;
     virtual unsigned remotePort() const = 0;
     virtual SockAddr remoteAddr() const = 0;
+    virtual HostAndPort local() const = 0;
     virtual SockAddr localAddr() const = 0;
 
     void setX509SubjectName(const std::string& x509SubjectName) {
@@ -63,6 +64,15 @@ public:
         return _connectionId;
     }
     void setConnectionId(long long connectionId);
+
+    /* vip interfaces */
+    virtual void initVipMode() { }
+    virtual bool isVipMode(std::string& vip, int& vport, uint32_t& vid) const { return false; }
+    virtual bool isVipMode() const { return false; }
+
+    /* whitelist interfaces */
+    virtual void setInAdminWhiteList() {  }
+    virtual bool inAdminWhiteList() { return false; }
 
 public:
     // TODO make this private with some helpers

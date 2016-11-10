@@ -36,6 +36,7 @@
 #include "mongo/base/error_codes.h"
 #include "mongo/db/auth/privilege.h"
 #include "mongo/db/auth/user.h"
+#include "mongo/db/concurrency/lock_stats.h"
 
 namespace mongo {
 
@@ -47,6 +48,7 @@ class NamespaceString;
 class ReplSetConfig;
 class StringData;
 class UserName;
+class CurOp;
 
 namespace audit {
 
@@ -340,5 +342,12 @@ void parseAndRemoveImpersonatedRolesField(BSONObj cmdObj,
                                           std::vector<RoleName>* parsedRoleNames,
                                           bool* fieldIsPresent);
 
+void logSlowOp(ClientBasic* client,
+               CurOp& curop,
+               const SingleThreadedLockStats& lockStats);
+
 }  // namespace audit
+
+void startAuditLogFlusher();
+
 }  // namespace mongo

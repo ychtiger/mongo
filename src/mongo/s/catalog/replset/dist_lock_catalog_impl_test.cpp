@@ -48,6 +48,7 @@
 #include "mongo/s/catalog/type_lockpings.h"
 #include "mongo/s/catalog/type_locks.h"
 #include "mongo/s/client/shard_registry.h"
+#include "mongo/s/write_ops/batched_update_request.h"
 #include "mongo/stdx/future.h"
 #include "mongo/stdx/memory.h"
 #include "mongo/stdx/thread.h"
@@ -66,7 +67,6 @@ using repl::ReadConcernArgs;
 namespace {
 
 const HostAndPort dummyHost("dummy", 123);
-const Milliseconds kWTimeout(100);
 static const stdx::chrono::seconds kFutureTimeout{5};
 
 /**
@@ -134,7 +134,7 @@ private:
                                              configCS);
         _shardRegistry->startup();
 
-        _distLockCatalog = stdx::make_unique<DistLockCatalogImpl>(_shardRegistry.get(), kWTimeout);
+        _distLockCatalog = stdx::make_unique<DistLockCatalogImpl>(_shardRegistry.get());
 
         targeter()->setFindHostReturnValue(dummyHost);
     }
@@ -180,7 +180,7 @@ TEST_F(DistLockCatalogFixture, BasicPing) {
                     }
                 },
                 upsert: true,
-                writeConcern: { w: "majority", wtimeout: 100 },
+                writeConcern: { w: "majority", wtimeout: 15000 },
                 maxTimeMS: 30000
             })"));
 
@@ -334,7 +334,7 @@ TEST_F(DistLockCatalogFixture, GrabLockNoOp) {
                 },
                 upsert: true,
                 new: true,
-                writeConcern: { w: "majority", wtimeout: 100 },
+                writeConcern: { w: "majority", wtimeout: 15000 },
                 maxTimeMS: 30000
             })"));
 
@@ -382,7 +382,7 @@ TEST_F(DistLockCatalogFixture, GrabLockWithNewDoc) {
                 },
                 upsert: true,
                 new: true,
-                writeConcern: { w: "majority", wtimeout: 100 },
+                writeConcern: { w: "majority", wtimeout: 15000 },
                 maxTimeMS: 30000
             })"));
 
@@ -646,7 +646,7 @@ TEST_F(DistLockCatalogFixture, OvertakeLockNoOp) {
                     }
                 },
                 new: true,
-                writeConcern: { w: "majority", wtimeout: 100 },
+                writeConcern: { w: "majority", wtimeout: 15000 },
                 maxTimeMS: 30000
             })"));
 
@@ -699,7 +699,7 @@ TEST_F(DistLockCatalogFixture, OvertakeLockWithNewDoc) {
                     }
                 },
                 new: true,
-                writeConcern: { w: "majority", wtimeout: 100 },
+                writeConcern: { w: "majority", wtimeout: 15000 },
                 maxTimeMS: 30000
             })"));
 
@@ -888,7 +888,7 @@ TEST_F(DistLockCatalogFixture, BasicUnlock) {
                 findAndModify: "locks",
                 query: { ts: ObjectId("555f99712c99a78c5b083358") },
                 update: { $set: { state: 0 }},
-                writeConcern: { w: "majority", wtimeout: 100 },
+                writeConcern: { w: "majority", wtimeout: 15000 },
                 maxTimeMS: 30000
             })"));
 
@@ -921,7 +921,7 @@ TEST_F(DistLockCatalogFixture, UnlockWithNoNewDoc) {
                 findAndModify: "locks",
                 query: { ts: ObjectId("555f99712c99a78c5b083358") },
                 update: { $set: { state: 0 }},
-                writeConcern: { w: "majority", wtimeout: 100 },
+                writeConcern: { w: "majority", wtimeout: 15000 },
                 maxTimeMS: 30000
             })"));
 
@@ -1039,6 +1039,69 @@ TEST_F(DistLockCatalogFixture, UnlockUnsupportedResponseFormat) {
         return BSON("ok" << 1 << "value"
                          << "NaN");
     });
+
+    future.timed_get(kFutureTimeout);
+}
+
+TEST_F(DistLockCatalogFixture, BasicUnlockAll) {
+    auto future = launchAsync([this] {
+        auto status = catalog()->unlockAll(txn(), "processID");
+        ASSERT_OK(status);
+    });
+
+    onCommand([](const RemoteCommandRequest& request)
+                  -> StatusWith<BSONObj> {
+                      ASSERT_EQUALS(dummyHost, request.target);
+                      ASSERT_EQUALS("config", request.dbname);
+
+                      std::string errmsg;
+                      BatchedUpdateRequest batchRequest;
+                      ASSERT(batchRequest.parseBSON("config", request.cmdObj, &errmsg));
+                      ASSERT_EQUALS(LocksType::ConfigNS, batchRequest.getNS().toString());
+                      ASSERT_EQUALS(BSON("w"
+                                         << "majority"
+                                         << "wtimeout" << 15000),
+                                    batchRequest.getWriteConcern());
+                      auto updates = batchRequest.getUpdates();
+                      ASSERT_EQUALS(1U, updates.size());
+                      auto update = updates.front();
+                      ASSERT_FALSE(update->getUpsert());
+                      ASSERT_TRUE(update->getMulti());
+                      ASSERT_EQUALS(BSON(LocksType::process("processID")), update->getQuery());
+                      ASSERT_EQUALS(BSON("$set" << BSON(LocksType::state(LocksType::UNLOCKED))),
+                                    update->getUpdateExpr());
+
+                      return BSON("ok" << 1);
+                  });
+
+    future.timed_get(kFutureTimeout);
+}
+
+TEST_F(DistLockCatalogFixture, UnlockAllWriteFailed) {
+    auto future = launchAsync([this] {
+        auto status = catalog()->unlockAll(txn(), "processID");
+        ASSERT_EQUALS(ErrorCodes::IllegalOperation, status);
+    });
+
+    onCommand([](const RemoteCommandRequest& request) -> StatusWith<BSONObj> {
+        return BSON("ok" << 0 << "code" << ErrorCodes::IllegalOperation << "errmsg"
+                         << "something went wrong");
+    });
+
+    future.timed_get(kFutureTimeout);
+}
+
+TEST_F(DistLockCatalogFixture, UnlockAllNetworkError) {
+    auto future = launchAsync([this] {
+        auto status = catalog()->unlockAll(txn(), "processID");
+        ASSERT_EQUALS(ErrorCodes::NetworkTimeout, status);
+    });
+
+    for (int i = 0; i < 3; i++) {  // ShardRegistry will retry 3 times on network errors
+        onCommand([](const RemoteCommandRequest& request) -> StatusWith<BSONObj> {
+            return Status(ErrorCodes::NetworkTimeout, "network error");
+        });
+    }
 
     future.timed_get(kFutureTimeout);
 }
@@ -1200,7 +1263,7 @@ TEST_F(DistLockCatalogFixture, BasicStopPing) {
                 findAndModify: "lockpings",
                 query: { _id: "test" },
                 remove: true,
-                writeConcern: { w: "majority", wtimeout: 100 },
+                writeConcern: { w: "majority", wtimeout: 15000 },
                 maxTimeMS: 30000
             })"));
 

@@ -48,9 +48,12 @@ class ServiceContext;
 
 class ReplSetDistLockManager final : public DistLockManager {
 public:
-    static const stdx::chrono::seconds kDistLockWriteConcernTimeout;
-    static const stdx::chrono::seconds kDistLockPingInterval;
-    static const stdx::chrono::minutes kDistLockExpirationTime;
+    // How frequently should the dist lock pinger thread run and write liveness information about
+    // this instance of the dist lock manager
+    static const Seconds kDistLockPingInterval;
+
+    // How long should the lease on a distributed lock last
+    static const Minutes kDistLockExpirationTime;
 
     ReplSetDistLockManager(ServiceContext* globalContext,
                            StringData processID,
@@ -63,12 +66,16 @@ public:
     virtual void startUp() override;
     virtual void shutDown(OperationContext* txn, bool allowNetworking) override;
 
+    virtual std::string getProcessID() override;
+
     virtual StatusWith<DistLockManager::ScopedDistLock> lock(
         OperationContext* txn,
         StringData name,
         StringData whyMessage,
         stdx::chrono::milliseconds waitFor,
         stdx::chrono::milliseconds lockTryInterval) override;
+
+    virtual void unlockAll(OperationContext* txn, const std::string& processID) override;
 
 protected:
     virtual void unlock(OperationContext* txn, const DistLockHandle& lockSessionID) override;

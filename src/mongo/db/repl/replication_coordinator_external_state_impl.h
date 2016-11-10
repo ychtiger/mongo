@@ -106,6 +106,9 @@ private:
     // Thread running BackgroundSync::producerThread().
     std::unique_ptr<stdx::thread> _producerThread;
 
+    // Thread running runCheckIO
+    std::unique_ptr<stdx::thread> _checkIOThread;
+
     // Mutex guarding the _nextThreadId value to prevent concurrent incrementing.
     stdx::mutex _nextThreadIdMutex;
     // Number used to uniquely name threads.

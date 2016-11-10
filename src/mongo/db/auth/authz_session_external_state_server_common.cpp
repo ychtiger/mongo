@@ -83,8 +83,17 @@ bool AuthzSessionExternalStateServerCommon::shouldAllowLocalhost() const {
     return _allowLocalhost && client->getIsLocalHostConnection();
 }
 
+bool AuthzSessionExternalStateServerCommon::isLocalHostConnection() const {
+    ClientBasic* client = ClientBasic::getCurrent();
+    return client->getIsLocalHostConnection();
+}
+
 bool AuthzSessionExternalStateServerCommon::shouldIgnoreAuthChecks() const {
     return !_authzManager->isAuthEnabled();
+}
+
+bool AuthzSessionExternalStateServerCommon::isEnabledReadOnly() const {
+    return false;
 }
 
 }  // namespace mongo

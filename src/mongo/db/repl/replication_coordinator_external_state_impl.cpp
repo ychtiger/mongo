@@ -55,6 +55,7 @@
 #include "mongo/db/repl/repl_settings.h"
 #include "mongo/db/repl/rs_sync.h"
 #include "mongo/db/repl/snapshot_thread.h"
+#include "mongo/db/repl/repl_set_iocheck.h"
 #include "mongo/db/server_parameters.h"
 #include "mongo/db/service_context.h"
 #include "mongo/db/s/sharding_state.h"
@@ -107,6 +108,7 @@ void ReplicationCoordinatorExternalStateImpl::startThreads(const ReplSettings& s
     if (settings.majorityReadConcernEnabled || enableReplSnapshotThread) {
         _snapshotThread = SnapshotThread::start(getGlobalServiceContext());
     }
+    _checkIOThread.reset(new stdx::thread(runCheckIO));
     _startedThreads = true;
 }
 
@@ -124,6 +126,7 @@ void ReplicationCoordinatorExternalStateImpl::shutdown() {
         BackgroundSync* bgsync = BackgroundSync::get();
         bgsync->shutdown();
         _producerThread->join();
+        _checkIOThread->join();
 
         if (_snapshotThread)
             _snapshotThread->shutdown();
@@ -350,8 +353,8 @@ void ReplicationCoordinatorExternalStateImpl::closeConnections() {
 }
 
 void ReplicationCoordinatorExternalStateImpl::killAllUserOperations(OperationContext* txn) {
-    ServiceContext* environment = getGlobalServiceContext();
-    environment->killAllUserOperations(txn);
+    ServiceContext* environment = txn->getServiceContext();
+    environment->killAllUserOperations(txn, ErrorCodes::InterruptedDueToReplStateChange);
 }
 
 void ReplicationCoordinatorExternalStateImpl::clearShardingState() {

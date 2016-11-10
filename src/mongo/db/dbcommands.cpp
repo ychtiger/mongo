@@ -196,6 +196,19 @@ public:
                                               "with --configsvr"));
         }
 
+        if (dbname == "admin" && txn->getClient()->isVipMode() &&
+                !AuthorizationSession::get(txn->getClient())->hasAuthByBuiltinUser()) {
+            std::string vip;
+            int vport = 0;
+            uint32_t vid = 0;
+            txn->getClient()->isVipMode(vip, vport, vid);
+            log() << "unauthorized command dropDatabase " << dbname
+                << " from " << vip << ":" << vport << "@" << vid << endl;
+            return appendCommandStatus(result,
+                                       Status(ErrorCodes::IllegalOperation,
+                                              "Cannot drop 'admin' database"));
+        }
+
         if ((repl::getGlobalReplicationCoordinator()->getReplicationMode() !=
              repl::ReplicationCoordinator::modeNone) &&
             (dbname == "local")) {
@@ -528,10 +541,10 @@ public:
                      string& errmsg,
                      BSONObjBuilder& result) {
         if (cmdObj.hasField("autoIndexId")) {
-            const char* deprecationWarning =
-                "the autoIndexId option is deprecated and will be removed in a future release";
-            warning() << deprecationWarning;
-            result.append("note", deprecationWarning);
+            if (!cmdObj["autoIndexId"].trueValue()) {
+                errmsg = "autoIndexId option cannot be false in replica set";
+                return false;
+            }
         }
         return appendCommandStatus(result, createCollection(txn, dbname, cmdObj));
     }
@@ -1216,6 +1229,10 @@ void Command::execCommand(OperationContext* txn,
 
         if (isHelpRequest(extractedFields[kHelpField])) {
             CurOp::get(txn)->ensureStarted();
+            // We disable last-error for help requests due to SERVER-11492, because config servers
+            // use help requests to determine which commands are database writes, and so must be
+            // forwarded to all mirrored (SCCC) config servers.
+            LastError::get(txn->getClient()).disable();
             generateHelpResponse(txn, request, replyBuilder, *command);
             return;
         }
@@ -1341,7 +1358,17 @@ void Command::execCommand(OperationContext* txn,
 bool Command::run(OperationContext* txn,
                   const rpc::RequestInterface& request,
                   rpc::ReplyBuilderInterface* replyBuilder) {
-    BSONObjBuilder inPlaceReplyBob(replyBuilder->getInPlaceReplyBuilder(reserveBytesForReply()));
+    auto bytesToReserve = reserveBytesForReply();
+
+// SERVER-22100: In Windows DEBUG builds, the CRT heap debugging overhead, in conjunction with the
+// additional memory pressure introduced by reply buffer pre-allocation, causes the concurrency
+// suite to run extremely slowly. As a workaround we do not pre-allocate in Windows DEBUG builds.
+#ifdef _WIN32
+    if (kDebugBuild)
+        bytesToReserve = 0;
+#endif
+
+    BSONObjBuilder inPlaceReplyBob(replyBuilder->getInPlaceReplyBuilder(bytesToReserve));
 
     repl::ReplicationCoordinator* replCoord = repl::getGlobalReplicationCoordinator();
 

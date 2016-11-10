@@ -81,6 +81,9 @@ class ReplicaSetFixture(interface.ReplFixture):
             member_info = {"_id": i, "host": node.get_connection_string()}
             if i > 0:
                 member_info["priority"] = 0
+            if i >= 7:
+                # Only 7 nodes in a replica set can vote, so the other members must be non-voting.
+                member_info["votes"] = 0
             members.append(member_info)
         initiate_cmd_obj = {"replSetInitiate": {"_id": self.replset_name, "members": members}}
 
@@ -152,14 +155,15 @@ class ReplicaSetFixture(interface.ReplFixture):
         self.logger.info("Awaiting replication of insert (w=%d, wtimeout=%d min) to primary on port"
                          " %d", self.num_nodes, interface.ReplFixture.AWAIT_REPL_TIMEOUT_MINS,
                          self.port)
+        client = utils.new_mongo_client(port=self.port)
 
         # Keep retrying this until it times out waiting for replication.
         def insert_fn(remaining_secs):
             remaining_millis = int(round(remaining_secs * 1000))
-            client = utils.new_mongo_client(port=self.port)
-            client.resmoke.await_repl.insert({"awaiting": "repl"},
-                                             w=self.num_nodes,
-                                             wtimeout=remaining_millis)
+            write_concern = pymongo.WriteConcern(w=self.num_nodes, wtimeout=remaining_millis)
+            coll = client.resmoke.get_collection("await_repl", write_concern=write_concern)
+            coll.insert_one({"awaiting": "repl"})
+
         try:
             self.retry_until_wtimeout(insert_fn)
         except pymongo.errors.WTimeoutError:

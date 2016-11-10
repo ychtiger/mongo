@@ -138,6 +138,12 @@ private:
             return appendCommandStatus(result, parseRequestStatus);
         }
 
+        // Builtin user support, forbid group on admin.system.users
+        Status checkStatus = checkCommands(txn, groupRequest.ns);
+        if (!checkStatus.isOK()) {
+            return appendCommandStatus(result, checkStatus);
+        }
+
         AutoGetCollectionForRead ctx(txn, groupRequest.ns);
         Collection* coll = ctx.getCollection();
 

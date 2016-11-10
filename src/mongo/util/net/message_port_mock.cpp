@@ -56,6 +56,10 @@ SockAddr MessagingPortMock::remoteAddr() const {
     return SockAddr{};
 }
 
+HostAndPort MessagingPortMock::local() const {
+    return _local;
+}
+
 SockAddr MessagingPortMock::localAddr() const {
     return SockAddr{};
 }

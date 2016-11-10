@@ -92,6 +92,12 @@ namespace {
 const ReadPreferenceSetting kConfigReadSelector(ReadPreference::Nearest, TagSet{});
 const ReadPreferenceSetting kConfigPrimaryPreferredSelector(ReadPreference::PrimaryPreferred,
                                                             TagSet{});
+const WriteConcernOptions kMajorityWriteConcern(WriteConcernOptions::kMajority,
+                                                // Note: Even though we're setting NONE here,
+                                                // kMajority implies JOURNAL if journaling is
+                                                // supported by mongod.
+                                                WriteConcernOptions::NONE,
+                                                Seconds(15));
 
 const int kMaxConfigVersionInitRetry = 3;
 const int kMaxReadRetry = 3;
@@ -188,13 +194,16 @@ Status CatalogManagerReplicaSet::shardCollection(OperationContext* txn,
     }
 
     shared_ptr<ChunkManager> manager(new ChunkManager(ns, fieldsAndOrder, unique));
-    manager->createFirstChunks(txn, dbPrimaryShardId, &initPoints, &initShardIds);
+    Status createFirstChunksStatus =
+        manager->createFirstChunks(txn, dbPrimaryShardId, &initPoints, &initShardIds);
+    if (!createFirstChunksStatus.isOK()) {
+        return createFirstChunksStatus;
+    }
     manager->loadExistingRanges(txn, nullptr);
 
     CollectionInfo collInfo;
     collInfo.useChunkManager(manager);
     collInfo.save(txn, ns);
-    manager->reload(txn, true);
 
     // Tell the primary mongod to refresh its data
     // TODO:  Think the real fix here is for mongos to just
@@ -379,8 +388,6 @@ StatusWith<OpTimePair<DatabaseType>> CatalogManagerReplicaSet::_fetchDatabaseMet
 
 StatusWith<OpTimePair<CollectionType>> CatalogManagerReplicaSet::getCollection(
     OperationContext* txn, const std::string& collNs) {
-    auto configShard = grid.shardRegistry()->getShard(txn, "config");
-
     auto statusFind = _exhaustiveFindOnConfig(txn,
                                               kConfigReadSelector,
                                               NamespaceString(CollectionType::ConfigNS),
@@ -962,7 +969,7 @@ Status CatalogManagerReplicaSet::insertConfigDocument(OperationContext* txn,
 
     BatchedCommandRequest request(insert.release());
     request.setNS(nss);
-    request.setWriteConcern(WriteConcernOptions::Majority);
+    request.setWriteConcern(kMajorityWriteConcern.toBSON());
 
     for (int retry = 1; retry <= kMaxWriteRetry; retry++) {
         BatchedCommandResponse response;
@@ -1039,7 +1046,7 @@ StatusWith<bool> CatalogManagerReplicaSet::updateConfigDocument(OperationContext
 
     BatchedCommandRequest request(updateRequest.release());
     request.setNS(nss);
-    request.setWriteConcern(WriteConcernOptions::Majority);
+    request.setWriteConcern(kMajorityWriteConcern.toBSON());
 
     BatchedCommandResponse response;
     _runBatchWriteCommand(txn, request, &response, ShardRegistry::kAllRetriableErrors);
@@ -1069,7 +1076,7 @@ Status CatalogManagerReplicaSet::removeConfigDocuments(OperationContext* txn,
 
     BatchedCommandRequest request(deleteRequest.release());
     request.setNS(nss);
-    request.setWriteConcern(WriteConcernOptions::Majority);
+    request.setWriteConcern(kMajorityWriteConcern.toBSON());
 
     BatchedCommandResponse response;
     _runBatchWriteCommand(txn, request, &response, ShardRegistry::kAllRetriableErrors);

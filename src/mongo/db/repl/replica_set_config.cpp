@@ -153,7 +153,9 @@ Status ReplicaSetConfig::_initialize(const BSONObj& cfg, bool forInitiate, bool 
         }
 
         if (usePV1ByDefault) {
-            _protocolVersion = 1;
+            //_protocolVersion = 1;
+            // we use 3.0 protocol to keep backward compatible
+            _protocolVersion = 0;
         }
     }
 

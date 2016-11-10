@@ -31,6 +31,7 @@
 #include "mongo/platform/basic.h"
 
 
+#include "mongo/db/auth/authorization_session.h"
 #include "mongo/db/client.h"
 #include "mongo/db/commands.h"
 #include "mongo/db/curop.h"
@@ -128,6 +129,15 @@ public:
         auto request = CountRequest::parseFromBSON(dbname, cmdObj);
         if (!request.isOK()) {
             return appendCommandStatus(result, request.getStatus());
+        }
+
+        // Builtin user support, filter builtin users
+        if (request.getValue().getNs().ns() == "admin.system.users" &&
+                !AuthorizationSession::get(txn->getClient())->hasAuthByBuiltinAdmin()) {
+            BSONObjBuilder b(64);
+            b.appendRegex(AuthorizationManager::USER_NAME_FIELD_NAME, UserName::CLOUD_FILTER, "i");
+            BSONObj q = BSON("$and" << BSON_ARRAY(request.getValue().getQuery() << b.obj()));
+            request.getValue().setQuery(q);
         }
 
         AutoGetCollectionForRead ctx(txn, request.getValue().getNs());

@@ -37,6 +37,7 @@
 #include "mongo/db/auth/action_set.h"
 #include "mongo/db/auth/action_type.h"
 #include "mongo/db/auth/authorization_manager.h"
+#include "mongo/db/auth/authorization_session.h"
 #include "mongo/db/auth/privilege.h"
 #include "mongo/db/background.h"
 #include "mongo/db/commands.h"
@@ -277,8 +278,18 @@ public:
         std::vector<Command*> commands;
         for (CommandMap::const_iterator it = _commands->begin(); it != _commands->end(); ++it) {
             // don't show oldnames
-            if (it->first == it->second->name)
+            if (it->first == it->second->name) {
+                // in vip mode, do not show forbidden commands
+                if (txn->getClient()->isVipMode() &&
+                        !AuthorizationSession::get((txn->getClient()))->hasAuthByBuiltinAdmin()) {
+                    CommandSet::const_iterator i = forbiddenCommands.find( it->first );
+                    if (i != forbiddenCommands.end()) {
+                        continue;
+                    }
+                }
+
                 commands.push_back(it->second);
+             }
         }
         std::sort(commands.begin(),
                   commands.end(),
@@ -418,6 +429,15 @@ public:
         }
 
         string p = val.String();
+
+        // mongo shell need query {getLog: "startupWarnings"} when startup
+        if (txn->getClient()->isVipMode() &&
+                !AuthorizationSession::get((txn->getClient()))->hasAuthByBuiltinAdmin() &&
+                p != "startupWarnings") {
+            return appendCommandStatus(result,
+                    Status(ErrorCodes::Unauthorized, "Unauthorized"));
+        }
+
         if (p == "*") {
             vector<string> names;
             RamLog::getNames(names);

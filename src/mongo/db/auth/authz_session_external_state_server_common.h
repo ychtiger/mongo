@@ -45,8 +45,10 @@ public:
     virtual ~AuthzSessionExternalStateServerCommon();
 
     virtual bool shouldAllowLocalhost() const;
+    virtual bool isLocalHostConnection() const;
     virtual bool shouldIgnoreAuthChecks() const;
     virtual bool serverIsArbiter() const;
+    virtual bool isEnabledReadOnly() const;
 
 protected:
     AuthzSessionExternalStateServerCommon(AuthorizationManager* authzManager);

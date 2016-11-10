@@ -38,6 +38,7 @@
 #endif
 #include <ios>
 #include <iostream>
+#include <boost/algorithm/string.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/operations.hpp>
 
@@ -260,6 +261,33 @@ Status addGeneralServerOptions(moe::OptionSection* options) {
                                moe::String,
                                "Desired format for timestamps in log messages. One of ctime, "
                                "iso8601-utc or iso8601-local");
+
+    options
+        ->addOptionChaining(
+              "auditLog.path",
+              "",
+              moe::String,
+              "audit log file to send writes to if logging to a file - has to be a file, not directory")
+        .setSources(moe::SourceYAMLConfig)
+        .hidden();
+
+    options->addOptionChaining("auditLog.format",
+                               "",
+                               moe::String,
+                               "Desired audit log format, JSON or AliCloudDB")
+                               .setSources(moe::SourceYAMLConfig);
+
+    options->addOptionChaining("auditLog.opFilter",
+                               "",
+                               moe::String,
+                               "specify filter operation to audit, ',' sperated string format")
+                               .setSources(moe::SourceYAMLConfig);
+
+    options->addOptionChaining("auditLog.authSuccess", "", moe::Bool, "enable audit authorization success")
+        .setSources(moe::SourceYAMLConfig);
+
+    options->addOptionChaining("auditLog.vipOnly", "", moe::Bool, "enable audit vip only for CRUD")
+        .setSources(moe::SourceYAMLConfig);
 
     options->addOptionChaining("processManagement.pidFilePath",
                                "pidfilepath",
@@ -935,6 +963,38 @@ Status storeServerOptions(const moe::Environment& params, const std::vector<std:
         return Status(ErrorCodes::BadValue, "--fork has to be used with --logpath or --syslog");
     }
 
+    if (params.count("auditLog.path")) {
+        serverGlobalParams.auditLogpath = params["auditLog.path"].as<std::string>();
+    }
+
+    if (params.count("auditLog.format")) {
+        serverGlobalParams.auditLogFormat = params["auditLog.format"].as<std::string>();
+        if (serverGlobalParams.auditLogFormat != "JSON" && serverGlobalParams.auditLogFormat != "AliCloudDB") {
+            StringBuilder sb;
+            sb << "Value of auditLogFormat must be one of JSON "
+               << "or AliCloudDB; not \"" << serverGlobalParams.auditLogFormat << "\".";
+            return Status(ErrorCodes::BadValue, sb.str());
+        }
+    }
+
+    if (params.count("auditLog.opFilter")) {
+        serverGlobalParams.auditOpFilterStr = params["auditLog.opFilter"].as<std::string>();
+        if (!parseAuditOpFilter(serverGlobalParams.auditOpFilterStr, serverGlobalParams.auditOpFilter)) {
+            StringBuilder sb;
+            sb << "Value of opFilter must be one or combination of auth,admin,slow,insert,update,delete,command,query or"
+               << "all/off; not \"" << serverGlobalParams.auditOpFilterStr << "\".";
+            return Status(ErrorCodes::BadValue, sb.str());
+        }
+    }
+
+    if (params.count("auditLog.authSuccess")) {
+        serverGlobalParams.auditAuthSuccess = params["auditLog.authSuccess"].as<bool>();
+    }
+
+    if (params.count("auditLog.vipOnly")) {
+        serverGlobalParams.auditVipOnly = params["auditLog.vipOnly"].as<bool>();
+    }
+
     if (params.count("security.keyFile")) {
         serverGlobalParams.keyFile =
             boost::filesystem::absolute(params["security.keyFile"].as<string>()).generic_string();
@@ -986,6 +1046,44 @@ Status storeServerOptions(const moe::Environment& params, const std::vector<std:
 #endif
 
     return Status::OK();
+}
+
+bool parseAuditOpFilter(const std::string& filterStr, int& filter) {
+    int newFilter = 0;
+    std::vector<std::string> strs;
+    splitStringDelim(filterStr, &strs, ',');
+    bool hasAll = false;
+    bool hasOff = false;
+    for (std::vector<std::string>::iterator it = strs.begin(); it != strs.end(); ++it) {
+        boost::trim(*it);
+        if (*it == "off") {
+            hasOff = true;
+            continue;
+        }
+        if (*it == "all") {
+            hasAll = true;
+            continue;
+        }
+        logger::AuditOp op = logger::auditOpFromString(*it);
+        if (op == logger::opInvalid) {
+            return false;
+        }
+        newFilter |= op;
+    }
+    if (hasAll || hasOff) {
+        // "all" and "off" should be alone
+        if (newFilter != 0) {
+            return false;
+        }
+        if (hasAll && hasOff) {
+            return false;
+        }
+        if (hasAll) {
+            newFilter = 0xFFFFFFFF;
+        }
+    }
+    filter = newFilter;
+    return true;
 }
 
 }  // namespace mongo

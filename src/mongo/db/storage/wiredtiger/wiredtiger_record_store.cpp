@@ -91,6 +91,7 @@ bool shouldUseOplogHack(OperationContext* opCtx, const std::string& uri) {
 }  // namespace
 
 MONGO_FP_DECLARE(WTWriteConflictException);
+MONGO_FP_DECLARE(WTEmulateOutOfOrderNextRecordId);
 
 const std::string kWiredTigerEngineName = "wiredTiger";
 
@@ -483,7 +484,23 @@ public:
         _skipNextAdvance = false;
         int64_t key;
         invariantWTOK(c->get_key(c, &key));
-        const RecordId id = _fromKey(key);
+        RecordId id = _fromKey(key);
+
+        if (_forward && MONGO_FAIL_POINT(WTEmulateOutOfOrderNextRecordId)) {
+            log() << "WTEmulateOutOfOrderNextRecordId fail point has triggerd so RecordId is now "
+                     "RecordId(1) instead of " << id;
+            // Replace the found RecordId with a (small) fake one.
+            id = RecordId{1};
+        }
+
+        if (_forward && _lastReturnedId >= id) {
+            log() << "WTCursor::next -- c->next_key ( " << id
+                  << ") was not greater than _lastReturnedId (" << _lastReturnedId
+                  << ") which is a bug.";
+            // Force a retry of the operation from our last known position by acting as-if
+            // we received a WT_ROLLBACK error.
+            throw WriteConflictException();
+        }
 
         if (!isVisible(id)) {
             _eof = true;
@@ -1045,7 +1062,6 @@ int64_t WiredTigerRecordStore::cappedDeleteAsNeeded_inlock(OperationContext* txn
     OperationContext::RecoveryUnitState const realRUstate =
         txn->setRecoveryUnit(new WiredTigerRecoveryUnit(sc), OperationContext::kNotInUnitOfWork);
 
-    WiredTigerRecoveryUnit::get(txn)->markNoTicketRequired();  // realRecoveryUnit already has
     WT_SESSION* session = WiredTigerRecoveryUnit::get(txn)->getSession(txn)->getSession();
 
     int64_t dataSize = _dataSize.load();
@@ -1203,7 +1219,6 @@ void WiredTigerRecordStore::reclaimOplog(OperationContext* txn) {
                << " records totaling to " << stone->bytes << " bytes";
 
         WiredTigerRecoveryUnit* ru = WiredTigerRecoveryUnit::get(txn);
-        ru->markNoTicketRequired();  // No ticket is needed for internal operations.
         WT_SESSION* session = ru->getSession(txn)->getSession();
 
         try {

@@ -41,6 +41,7 @@
 #include "mongo/util/background.h"
 #include "mongo/util/log.h"
 #include "mongo/util/net/listen.h"
+#include "mongo/util/net/viputil.h"
 #include "mongo/util/net/message.h"
 #include "mongo/util/net/ssl_manager.h"
 #include "mongo/util/net/ssl_options.h"
@@ -111,9 +112,12 @@ MessagingPort::MessagingPort(int fd, const SockAddr& remote)
 MessagingPort::MessagingPort(double timeout, logger::LogSeverity ll)
     : MessagingPort(std::make_shared<Socket>(timeout, ll)) {}
 
-MessagingPort::MessagingPort(std::shared_ptr<Socket> sock) : psock(std::move(sock)) {
-    SockAddr sa = psock->remoteAddr();
-    _remoteParsed = HostAndPort(sa.getAddr(), sa.getPort());
+MessagingPort::MessagingPort(std::shared_ptr<Socket> sock)
+    : psock(std::move(sock)), _vipMode(false), _vport(0), _vid(0), _inAdminWhiteList(false), _inUserWhiteList(false) {
+    SockAddr rsa = psock->remoteAddr();
+    _remoteParsed = HostAndPort(rsa.getAddr(), rsa.getPort());
+    SockAddr lsa = psock->localAddr();
+    _localParsed = HostAndPort(lsa.getAddr(), lsa.getPort());
     ports.insert(this);
 }
 
@@ -263,8 +267,29 @@ SockAddr MessagingPort::remoteAddr() const {
     return psock->remoteAddr();
 }
 
+HostAndPort MessagingPort::local() const {
+    return _localParsed;
+}
+
 SockAddr MessagingPort::localAddr() const {
     return psock->localAddr();
+}
+
+void MessagingPort::initVipMode() {
+    _vipMode = VipUtil::getVipAddr(psock->rawFD(), _vip, _vport, _vid);
+}
+
+bool MessagingPort::isVipMode(std::string& vip, int& vport, uint32_t& vid) const {
+    if (_vipMode) {
+        vip = _vip;
+        vport = _vport;
+        vid = _vid;
+    }
+    return _vipMode;
+}
+
+bool MessagingPort::isVipMode() const {
+    return _vipMode;
 }
 
 }  // namespace mongo

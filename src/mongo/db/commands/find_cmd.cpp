@@ -196,6 +196,34 @@ public:
                                         str::stream() << "Invalid collection name: " << nss.ns()});
         }
 
+        // Builtin user support, filter builtin users
+        if (fullns == "admin.system.users" &&
+                !AuthorizationSession::get(txn->getClient())->hasAuthByBuiltinAdmin()) {
+            BSONObjBuilder b(64);
+            b.appendRegex(AuthorizationManager::USER_NAME_FIELD_NAME, UserName::CLOUD_FILTER, "i");
+
+            std::string filterName = "filter";
+            BSONElement filterField = cmdObj[filterName];
+            BSONObj newFilter;
+            if (filterField.isABSONObj()) {
+                BSONObj filter = filterField.embeddedObject();
+                newFilter = BSON("$and" << BSON_ARRAY(filter << b.obj()));
+
+            } else {
+                newFilter = b.obj();
+            }
+
+            // rebuild new cmdObj
+            BSONObjBuilder nb(64);
+            nb.append(filterName, newFilter);
+            BSONForEach( e, cmdObj ) {
+                if (!str::equals(filterName.c_str() , e.fieldName())) {
+                    nb.append(e);
+                }
+            }
+            cmdObj = nb.obj();
+        }
+
         // Although it is a command, a find command gets counted as a query.
         globalOpCounters.gotQuery();
 

@@ -64,9 +64,8 @@ const int kMaxNumLockAcquireRetries = 2;
 
 }  // namespace
 
-const stdx::chrono::seconds ReplSetDistLockManager::kDistLockWriteConcernTimeout{5};
-const stdx::chrono::seconds ReplSetDistLockManager::kDistLockPingInterval{30};
-const stdx::chrono::minutes ReplSetDistLockManager::kDistLockExpirationTime{15};
+const Seconds ReplSetDistLockManager::kDistLockPingInterval{30};
+const Minutes ReplSetDistLockManager::kDistLockExpirationTime{15};
 
 ReplSetDistLockManager::ReplSetDistLockManager(ServiceContext* globalContext,
                                                StringData processID,
@@ -107,6 +106,10 @@ void ReplSetDistLockManager::shutDown(OperationContext* txn, bool allowNetworkin
         warning() << "error encountered while cleaning up distributed ping entry for " << _processID
                   << causedBy(status);
     }
+}
+
+std::string ReplSetDistLockManager::getProcessID() {
+    return _processID;
 }
 
 bool ReplSetDistLockManager::isShutDown() {
@@ -418,6 +421,13 @@ void ReplSetDistLockManager::unlock(OperationContext* txn, const DistLockHandle&
     } else {
         LOG(0) << "distributed lock with " << LocksType::lockID() << ": " << lockSessionID
                << "' unlocked.";
+    }
+}
+
+void ReplSetDistLockManager::unlockAll(OperationContext* txn, const std::string& processID) {
+    Status status = _catalog->unlockAll(txn, processID);
+    if (!status.isOK()) {
+        warning() << "Error while trying to unlock existing distributed locks" << causedBy(status);
     }
 }
 

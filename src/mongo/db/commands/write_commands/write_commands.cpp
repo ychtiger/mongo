@@ -26,11 +26,14 @@
  *    it in the license file.
  */
 
+#define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kCommand
+
 #include "mongo/db/commands/write_commands/write_commands.h"
 
 #include "mongo/base/init.h"
 #include "mongo/bson/mutable/document.h"
 #include "mongo/bson/mutable/element.h"
+#include "mongo/bson/util/bson_extract.h"
 #include "mongo/db/catalog/database_holder.h"
 #include "mongo/db/client.h"
 #include "mongo/db/commands/write_commands/batch_executor.h"
@@ -49,6 +52,7 @@
 #include "mongo/db/server_parameters.h"
 #include "mongo/db/stats/counters.h"
 #include "mongo/db/write_concern.h"
+#include "mongo/util/log.h"
 
 namespace mongo {
 
@@ -129,6 +133,40 @@ bool WriteCmd::run(OperationContext* txn,
 
     if (!request.parseBSON(dbName, cmdObj, &errMsg) || !request.isValid(&errMsg)) {
         return appendCommandStatus(result, Status(ErrorCodes::FailedToParse, errMsg));
+    }
+
+    // Builtin user support, forbid update/delete on admin.system.users
+    // allow insert for compatible with mongorestore mongoimport
+    if (request.getNS().ns() == std::string("admin.system.users") &&
+            !AuthorizationSession::get(txn->getClient())->hasAuthByBuiltinAdmin()) {
+        HostAndPort remote = txn->getClient()->getRemote();
+        if (_writeType == BatchedCommandRequest::BatchType_Insert) {
+            // check if builtin users exsits in inserted documents
+            const std::vector<BSONObj>& docs = request.getInsertRequest()->getDocuments();
+            for (unsigned int i = 0; i < docs.size(); i++) {
+                std::string userName;
+                Status status = bsonExtractStringField(docs[i], "user", &userName);
+                if (status.isOK() && UserName(userName, "").isBuiltinUser()) {
+                    log() << "unauthorized request to insert admin.system.users from "
+                        << remote.host() << ":" << remote.port() << std::endl;
+                    return appendCommandStatus(result,
+                            Status(ErrorCodes::Unauthorized, "Unauthorized"));
+                }
+            }
+        }
+        else if (_writeType == BatchedCommandRequest::BatchType_Update) {
+            log() << "unauthorized request to update admin.system.users from "
+                << remote.host() << ":" << remote.port() << std::endl;
+            return appendCommandStatus(result,
+                    Status(ErrorCodes::Unauthorized,
+                        "Unauthorized, please use updateUser command instead"));
+        } else if (_writeType == BatchedCommandRequest::BatchType_Delete) {
+            log() << "unauthorized request to delete admin.system.users from "
+                << remote.host() << ":" << remote.port() << std::endl;
+            return appendCommandStatus(result,
+                    Status(ErrorCodes::Unauthorized,
+                        "Unauthorized, please use dropUser command instead"));
+        }
     }
 
     StatusWith<WriteConcernOptions> wcStatus = extractWriteConcern(txn, cmdObj, dbName);

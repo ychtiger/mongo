@@ -96,7 +96,10 @@ public:
              int,
              string& errmsg,
              BSONObjBuilder& result) {
-        return ShardingState::get(txn)->migrationSourceManager()->transferMods(txn, errmsg, result);
+        const MigrationSessionId migrationSessionid(
+            uassertStatusOK(MigrationSessionId::extractFromBSON(cmdObj)));
+        return ShardingState::get(txn)->migrationSourceManager()->transferMods(
+            txn, migrationSessionid, errmsg, result);
     }
 
 } transferModsCommand;
@@ -135,7 +138,10 @@ public:
              int,
              string& errmsg,
              BSONObjBuilder& result) {
-        return ShardingState::get(txn)->migrationSourceManager()->clone(txn, errmsg, result);
+        const MigrationSessionId migrationSessionid(
+            uassertStatusOK(MigrationSessionId::extractFromBSON(cmdObj)));
+        return ShardingState::get(txn)->migrationSourceManager()->clone(
+            txn, migrationSessionid, errmsg, result);
     }
 
 } initialCloneCommand;
@@ -210,7 +216,7 @@ public:
 
         // Active state of TO-side migrations (MigrateStatus) is serialized by distributed
         // collection lock.
-        if (shardingState->migrationDestinationManager()->getActive()) {
+        if (shardingState->migrationDestinationManager()->isActive()) {
             errmsg = "migrate already in progress";
             return false;
         }
@@ -293,9 +299,18 @@ public:
 
         const string fromShard(cmdObj["from"].String());
 
-        Status startStatus = shardingState->migrationDestinationManager()->start(
-            ns, fromShard, min, max, shardKeyPattern, currentVersion.epoch(), writeConcern);
+        const MigrationSessionId migrationSessionId(
+            uassertStatusOK(MigrationSessionId::extractFromBSON(cmdObj)));
 
+        Status startStatus =
+            shardingState->migrationDestinationManager()->start(ns,
+                                                                migrationSessionId,
+                                                                fromShard,
+                                                                min,
+                                                                max,
+                                                                shardKeyPattern,
+                                                                currentVersion.epoch(),
+                                                                writeConcern);
         if (!startStatus.isOK()) {
             return appendCommandStatus(result, startStatus);
         }
@@ -341,7 +356,7 @@ public:
              string& errmsg,
              BSONObjBuilder& result) {
         ShardingState::get(txn)->migrationDestinationManager()->report(result);
-        return 1;
+        return true;
     }
 
 } recvChunkStatusCommand;
@@ -380,7 +395,11 @@ public:
              int,
              string& errmsg,
              BSONObjBuilder& result) {
-        bool ok = ShardingState::get(txn)->migrationDestinationManager()->startCommit();
+        const MigrationSessionId migrationSessionid(
+            uassertStatusOK(MigrationSessionId::extractFromBSON(cmdObj)));
+        const bool ok =
+            ShardingState::get(txn)->migrationDestinationManager()->startCommit(migrationSessionid);
+
         ShardingState::get(txn)->migrationDestinationManager()->report(result);
         return ok;
     }
@@ -430,6 +449,16 @@ public:
 
 }  // namespace
 
+/**
+ * If sharding is enabled, logs the operation for an active migration in the transfer mods log.
+ *
+ * 'ns' name of the collection in which the operation will occur.
+ * 'notInActiveChunk' a true value indicates that either:
+ *      1) the delete is coming from a donor shard in a current chunk migration,
+ *         and so does not need to be entered in this shard's outgoing transfer log.
+ *      2) the document is not within this shard's outgoing chunk migration range,
+ *         and so does not need to be forwarded to the migration recipient via the transfer log.
+ */
 void logOpForSharding(OperationContext* txn,
                       const char* opstr,
                       const char* ns,
@@ -439,6 +468,10 @@ void logOpForSharding(OperationContext* txn,
     ShardingState* shardingState = ShardingState::get(txn);
     if (shardingState->enabled())
         shardingState->migrationSourceManager()->logOp(txn, opstr, ns, obj, patt, notInActiveChunk);
+}
+
+bool isInMigratingChunk(OperationContext* txn, const NamespaceString& ns, const BSONObj& doc) {
+    return ShardingState::get(txn)->migrationSourceManager()->isInMigratingChunk(ns, doc);
 }
 
 }  // namespace mongo

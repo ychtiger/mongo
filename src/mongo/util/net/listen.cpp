@@ -337,7 +337,7 @@ void Listener::initAndListen() {
             long long myConnectionNumber = globalConnectionNumber.addAndFetch(1);
 
             if (_logConnect && !serverGlobalParams.quiet) {
-                int conns = globalTicketHolder.used() + 1;
+                int conns = globalTicketHolder.used() + internalTicketHolder.used() + 1;
                 const char* word = (conns == 1 ? " connection" : " connections");
                 log() << "connection accepted from " << from.toString() << " #"
                       << myConnectionNumber << " (" << conns << word << " now open)" << endl;
@@ -552,7 +552,7 @@ void Listener::initAndListen() {
         long long myConnectionNumber = globalConnectionNumber.addAndFetch(1);
 
         if (_logConnect && !serverGlobalParams.quiet) {
-            int conns = globalTicketHolder.used() + 1;
+            int conns = globalTicketHolder.used() + internalTicketHolder.used() + 1;
             const char* word = (conns == 1 ? " connection" : " connections");
             log() << "connection accepted from " << from.toString() << " #" << myConnectionNumber
                   << " (" << conns << word << " now open)" << endl;
@@ -637,6 +637,7 @@ void Listener::checkTicketNumbers() {
 
 
 TicketHolder Listener::globalTicketHolder(DEFAULT_MAX_CONN);
+TicketHolder Listener::internalTicketHolder(DEFAULT_MAX_CONN_INTERNAL);
 AtomicInt64 Listener::globalConnectionNumber;
 
 void ListeningSockets::closeAll() {

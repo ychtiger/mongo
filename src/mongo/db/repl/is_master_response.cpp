@@ -395,6 +395,11 @@ void IsMasterResponse::addHost(const HostAndPort& host) {
     _hosts.push_back(host);
 }
 
+void IsMasterResponse::replaceHost(const std::vector<HostAndPort> &hosts) {
+    if (_hostsSet)
+        _hosts = hosts;
+}
+
 void IsMasterResponse::addPassive(const HostAndPort& passive) {
     _passivesSet = true;
     _passives.push_back(passive);
@@ -408,6 +413,11 @@ void IsMasterResponse::addArbiter(const HostAndPort& arbiter) {
 void IsMasterResponse::setPrimary(const HostAndPort& primary) {
     _primarySet = true;
     _primary = primary;
+}
+
+void IsMasterResponse::clearPrimary() {
+    _primarySet = false;
+    _primary = HostAndPort();
 }
 
 void IsMasterResponse::setIsArbiterOnly(bool arbiterOnly) {

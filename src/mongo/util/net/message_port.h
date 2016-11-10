@@ -83,6 +83,7 @@ public:
     }
     virtual HostAndPort remote() const;
     virtual SockAddr remoteAddr() const;
+    virtual HostAndPort local() const;
     virtual SockAddr localAddr() const;
 
     std::shared_ptr<Socket> psock;
@@ -117,9 +118,39 @@ public:
         return psock->getSockCreationMicroSec();
     }
 
+    virtual void initVipMode();
+    virtual bool isVipMode(std::string& vip, int& vport, uint32_t& vid) const;
+    virtual bool isVipMode() const;
+
+    virtual void setInAdminWhiteList() {
+        _inAdminWhiteList = true;
+    }
+
+    virtual bool inAdminWhiteList() {
+        return _inAdminWhiteList;
+    }
+
+    virtual void setInUserWhiteList() {  
+        _inUserWhiteList = true;
+    }
+
+    virtual bool inUserWhiteList() {
+        return _inUserWhiteList;
+    }
+
 private:
-    // this is the parsed version of remote
+    // this is the parsed version of remote and local
     HostAndPort _remoteParsed;
+    HostAndPort _localParsed;
+
+    // vip info ralated with this socket
+    bool _vipMode;
+    std::string _vip;
+    int _vport;
+    uint32_t _vid;
+
+    bool _inAdminWhiteList;
+    bool _inUserWhiteList;
 
 public:
     static void closeAllSockets(unsigned tagMask = 0xffffffff);

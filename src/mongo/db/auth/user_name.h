@@ -75,9 +75,36 @@ public:
         return getFullName();
     }
 
+    /**
+     * If this is a builtin user
+     */
+    bool isBuiltinUser() const {
+        return getUser().startsWith(CLOUD_PREFIX);
+    }
+
+    /**
+     * If this is a builtin admin
+     */
+    bool isBuiltinAdmin() const {
+        return getUser().startsWith(CLOUD_ADMIN_PREFIX);
+    }
+
+    /**
+     * If this is a builtin internal user
+     */
+    bool isBuiltinInternal() const {
+        return getUser().startsWith(CLOUD_INTERNAL_PREFIX);
+    }
+
 private:
     std::string _fullName;  // The full name, stored as a string.  "user@db".
     size_t _splitPoint;     // The index of the "@" separating the user and db name parts.
+
+public:
+    static const std::string CLOUD_PREFIX;
+    static const std::string CLOUD_ADMIN_PREFIX;
+    static const std::string CLOUD_INTERNAL_PREFIX;
+    static const std::string CLOUD_FILTER;
 };
 
 static inline bool operator==(const UserName& lhs, const UserName& rhs) {

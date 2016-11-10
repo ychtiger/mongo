@@ -28,6 +28,8 @@ env.Library(
         "hostname_canonicalization.cpp",
         "httpclient.cpp",
         "listen.cpp",
+        "viputil.cpp",
+        "whitelist.cpp",
         "message.cpp",
         "message_port.cpp",
         "sock.cpp",
@@ -70,6 +72,18 @@ env.CppUnitTest(
         '$BUILD_DIR/mongo/util/concurrency/synchronization',
         'network',
     ],
+)
+
+env.CppUnitTest(
+    target='whitelist_test', 
+    source=[
+        'whitelist_test.cpp'
+    ],
+    LIBDEPS=[
+        '$BUILD_DIR/mongo/util/foundation',
+        '$BUILD_DIR/mongo/util/concurrency/synchronization',
+        'network',
+    ]
 )
 
 env.Library(

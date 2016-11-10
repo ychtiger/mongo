@@ -187,7 +187,7 @@ Status doSaslStep(const ClientBasic* client,
     status = session->step(payload, &responsePayload);
 
     if (!status.isOK()) {
-        const SockAddr clientAddr = client->port()->localAddr();
+        const SockAddr clientAddr = client->port()->remoteAddr();
         log() << session->getMechanism() << " authentication failed for "
               << session->getPrincipalId() << " on " << session->getAuthenticationDatabase()
               << " from client " << clientAddr.getAddr() << " ; " << status.toString() << std::endl;
@@ -203,6 +203,16 @@ Status doSaslStep(const ClientBasic* client,
 
     if (session->isDone()) {
         UserName userName(session->getPrincipalId(), session->getAuthenticationDatabase());
+        // builtin admin can only auth from localhost
+        if (userName.isBuiltinAdmin() && !client->getIsLocalHostConnection()) {
+            return Status(ErrorCodes::AuthenticationFailed, "builtin admin must auth from localhost");
+        }
+
+        // builtin internal user can only auth from inner network
+        if (userName.isBuiltinInternal() && client->isVipMode()) {
+            return Status(ErrorCodes::AuthenticationFailed, "builtin internal must auth from inner network");
+        }
+
         status =
             session->getAuthorizationSession()->addAndAuthorizeUser(session->getOpCtxt(), userName);
         if (!status.isOK()) {

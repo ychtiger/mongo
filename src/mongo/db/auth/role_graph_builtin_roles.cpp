@@ -62,6 +62,11 @@ const std::string BUILTIN_ROLE_CLUSTER_MANAGEMENT = "clusterManager";
 const std::string BUILTIN_ROLE_BACKUP = "backup";
 const std::string BUILTIN_ROLE_RESTORE = "restore";
 
+// forward declare to construct bypass priveleges
+void addClusterMonitorPrivileges(PrivilegeVector* privileges);
+void addHostManagerPrivileges(PrivilegeVector* privileges);
+void addClusterManagerPrivileges(PrivilegeVector* privileges);
+
 /// Actions that the "read" role may perform on a normal resources of a specific database, and
 /// that the "readAnyDatabase" role may perform on normal resources of any database.
 ActionSet readRoleActions;
@@ -188,10 +193,18 @@ MONGO_INITIALIZER(AuthorizationBuiltinRoles)(InitializerContext* context) {
         << ActionType::addShard << ActionType::removeShard
         << ActionType::listShards         // clusterMonitor gets this also
         << ActionType::flushRouterConfig  // hostManager gets this also
-        << ActionType::cleanupOrphaned;
+        << ActionType::cleanupOrphaned
+        << ActionType::netvip
+        << ActionType::readonly
+        << ActionType::reload;
 
     clusterManagerRoleDatabaseActions << ActionType::splitChunk << ActionType::moveChunk
                                       << ActionType::enableSharding << ActionType::splitVector;
+
+    // bypass auth check operations from localhost
+    addClusterMonitorPrivileges(&bypassPrivileges);
+    addHostManagerPrivileges(&bypassPrivileges);
+    addClusterManagerPrivileges(&bypassPrivileges);
 
     return Status::OK();
 }

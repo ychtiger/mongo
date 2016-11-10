@@ -474,8 +474,13 @@ env.Library(
         "audit.cpp",
     ],
     LIBDEPS=[
+        'auth/authorization_manager_global',
+        '$BUILD_DIR/mongo/db/auth/authcore',
+        '$BUILD_DIR/mongo/util/net/hostandport',
     ],
 )
+
+env.CppUnitTest('audit_op_filter_test', 'audit_op_filter_test.cpp', LIBDEPS=['server_options'])
 
 env.Library(
     target="commands",
@@ -556,12 +561,15 @@ serverOnlyFiles = [
     "commands/list_databases.cpp",
     "commands/list_indexes.cpp",
     "commands/mr.cpp",
+    "commands/netvip_cmd.cpp",
     "commands/oplog_note.cpp",
     "commands/parallel_collection_scan.cpp",
     "commands/pipeline_command.cpp",
     "commands/plan_cache_commands.cpp",
     "commands/rename_collection.cpp",
     "commands/repair_cursor.cpp",
+    "commands/readonly_cmd.cpp",
+    "commands/reload_cmd.cpp",
     "commands/snapshot_management.cpp",
     "commands/test_commands.cpp",
     "commands/top_command.cpp",

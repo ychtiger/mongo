@@ -48,6 +48,7 @@
 #include "mongo/db/repl/oplog.h"
 #include "mongo/db/repl/repl_set_heartbeat_args_v1.h"
 #include "mongo/db/repl/repl_set_heartbeat_args.h"
+#include "mongo/db/repl/repl_set_iocheck.h"
 #include "mongo/db/repl/repl_set_heartbeat_response.h"
 #include "mongo/db/repl/replication_coordinator_external_state_impl.h"
 #include "mongo/db/repl/replication_coordinator_global.h"
@@ -736,6 +737,10 @@ public:
         }
 
         Status status = Status(ErrorCodes::InternalError, "status not set in heartbeat code");
+        if (isIOHang()) {
+            return appendCommandStatus(result, status);
+        }
+
         /* we don't call ReplSetCommand::check() here because heartbeat
            checks many things that are pre-initialization. */
         if (!getGlobalReplicationCoordinator()->getSettings().usingReplSets()) {

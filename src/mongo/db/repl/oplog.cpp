@@ -732,13 +732,40 @@ Status applyOperation_inlock(OperationContext* txn,
         opCounters->gotInsert();
 
         if (nsToCollectionSubstring(ns) == "system.indexes") {
+            uassert(ErrorCodes::NoSuchKey,
+                    str::stream() << "Missing expected index spec in field 'o': " << op,
+                    !fieldO.eoo());
+            uassert(ErrorCodes::TypeMismatch,
+                    str::stream() << "Expected object for index spec in field 'o': " << op,
+                    fieldO.isABSONObj());
+
+            std::string indexNs;
+            uassertStatusOK(bsonExtractStringField(o, "ns", &indexNs));
+            const NamespaceString indexNss(indexNs);
+            uassert(ErrorCodes::InvalidNamespace,
+                    str::stream() << "Invalid namespace in index spec: " << op,
+                    indexNss.isValid());
+            uassert(ErrorCodes::InvalidNamespace,
+                    str::stream() << "Database name mismatch for database ("
+                                  << nsToDatabaseSubstring(ns) << ") while creating index: " << op,
+                    nsToDatabaseSubstring(ns) == indexNss.db());
+
             if (o["background"].trueValue()) {
-                IndexBuilder* builder = new IndexBuilder(o);
-                // This spawns a new thread and returns immediately.
-                builder->go();
-                // Wait for thread to start and register itself
                 Lock::TempRelease release(txn->lockState());
-                IndexBuilder::waitForBgIndexStarting();
+                if (txn->lockState()->isLocked()) {
+                    // If TempRelease fails, background index build will deadlock.
+                    LOG(3) << "apply op: building background index " << o
+                           << " in the foreground because temp release failed";
+                    IndexBuilder builder(o);
+                    Status status = builder.buildInForeground(txn, db);
+                    uassertStatusOK(status);
+                } else {
+                    IndexBuilder* builder = new IndexBuilder(o);
+                    // This spawns a new thread and returns immediately.
+                    builder->go();
+                    // Wait for thread to start and register itself
+                    IndexBuilder::waitForBgIndexStarting();
+                }
             } else {
                 IndexBuilder builder(o);
                 Status status = builder.buildInForeground(txn, db);

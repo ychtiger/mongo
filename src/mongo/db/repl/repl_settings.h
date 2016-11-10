@@ -89,6 +89,8 @@ public:
     std::string only;    // --only
     int pretouch = 0;    // --pretouch for replication application (experimental)
 
+    std::vector<std::string> netVip;
+
     std::string replSet;  // --replSet[/<seedlist>]
 
     std::string rsIndexPrefetch;  // --indexPrefetch

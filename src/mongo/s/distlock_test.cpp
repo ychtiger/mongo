@@ -145,7 +145,8 @@ public:
                    BSONObjBuilder& result) {
         stringstream ss;
         ss << "thread-" << threadId;
-        setThreadName(ss.str().c_str());
+        std::string threadName = ss.str();
+        setThreadName(threadName.c_str());
 
         // Lock name
         string lockName = string_field(cmdObj, "lockName", this->name + "_lock");
@@ -198,7 +199,7 @@ public:
             log() << "Initializing lock with skew of " << skew << " for thread " << threadId
                   << endl;
 
-            lock.reset(new DistributedLock(hostConn, lockName, takeoverMS, true));
+            lock.reset(new DistributedLock(hostConn, lockName, threadName));
 
             log() << "Skewed time " << jsTime() << "  for thread " << threadId << endl
                   << "  max wait (with lock: " << threadWait << ", after lock: " << threadSleep
@@ -211,11 +212,16 @@ public:
         bool errors = false;
         BSONObj lockObj;
         while (keepGoing.loadRelaxed()) {
-            Status pingStatus = pinger->startPing(
-                *myLock, stdx::chrono::milliseconds(takeoverMS / LOCK_SKEW_FACTOR));
+            Status pingStatus = pinger->startup(
+                hostConn, threadName, stdx::chrono::milliseconds(takeoverMS / LOCK_SKEW_FACTOR));
 
             if (!pingStatus.isOK()) {
                 log() << "**** Not good for pinging: " << pingStatus;
+                break;
+            }
+
+            if (lock->isRemoteTimeSkewed()) {
+                log() << "**** Too skewed for locking";
                 break;
             }
 
@@ -263,7 +269,7 @@ public:
 
             // Create a new lock 1/3 of the time
             if (randomNewLock() > 1) {
-                lock.reset(new DistributedLock(hostConn, lockName, takeoverMS, true));
+                lock.reset(new DistributedLock(hostConn, lockName, threadName));
                 myLock = lock.get();
             }
 

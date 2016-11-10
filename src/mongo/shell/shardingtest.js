@@ -180,10 +180,16 @@ var ShardingTest = function(params) {
 
     this.getServerName = function(dbname) {
         var x = this.config.databases.findOne({ _id : "" + dbname });
-        if (x)
+        if (x) {
             return x.primary;
-        this.config.databases.find().forEach(printjson);
-        throw Error("couldn't find dbname: " + dbname + " total: " + this.config.databases.count());
+        }
+
+        var countDBsFound = 0;
+        this.config.databases.find().forEach(function(db) {
+            countDBsFound++;
+            printjson(db);
+        });
+        throw Error("couldn't find dbname: " + dbname + " total: " + countDBsFound);
     };
 
     this.getNonPrimaries = function(dbname) {
@@ -463,7 +469,7 @@ var ShardingTest = function(params) {
             var x = self.chunkDiff(collName, dbName);
             print("chunk diff: " + x);
             return x < 2;
-        }, "no balance happened", 60000);
+        }, "no balance happened", timeToWait);
     };
 
     this.getShardNames = function() {
@@ -1248,24 +1254,38 @@ var ShardingTest = function(params) {
         this["s" + i] = this._mongos[i];
     }
 
-    // Disable the balancer unless it is explicitly turned on
-    if (!otherParams.enableBalancer) {
-        if (keyFile) {
-            authutil.assertAuthenticate(this._mongos, 'admin', {
-                user: '__system',
-                mechanism: 'MONGODB-CR',
-                pwd: cat(keyFile).replace(/[\011-\015\040]/g, '')
-            });
+    // If auth is enabled for the test, login the mongos connections as system in order to
+    // configure the instances and then log them out again.
+    if (keyFile) {
+        authutil.assertAuthenticate(this._mongos, 'admin', {
+            user: '__system',
+            mechanism: 'MONGODB-CR',
+            pwd: cat(keyFile).replace(/[\011-\015\040]/g, '')
+        });
+    }
 
-            try {
-                this.stopBalancer();
-            }
-            finally {
-                authutil.logout(this._mongos, 'admin');
-            }
-        }
-        else {
+    try {
+        // Disable the balancer unless it is explicitly turned on
+        if (!otherParams.enableBalancer) {
             this.stopBalancer();
+        }
+
+        // Lower the mongos replica set monitor's threshold for deeming RS shard hosts as
+        // inaccessible in order to speed up tests, which shutdown entire shards and check for
+        // errors. This attempt is best-effort and failure should not have effect on the actual
+        // test execution, just the execution time.
+        this._mongos.forEach(function(mongos) {
+            var res = mongos.adminCommand({ setParameter: 1, replMonitorMaxFailedChecks: 2 });
+
+            // For tests, which use x509 certificate for authentication, the command above will not
+            // work due to authorization error.
+            if (res.code != ErrorCodes.Unauthorized) {
+                assert.commandWorked(res);
+            }
+        });
+    } finally {
+        if (keyFile) {
+            authutil.logout(this._mongos, 'admin');
         }
     }
 

@@ -237,7 +237,7 @@ public:
 
         timing.done(2);
 
-        Status distLockStatus = distLock->checkForPendingCatalogSwap();
+        Status distLockStatus = distLock->checkForPendingCatalogChange();
         if (!distLockStatus.isOK()) {
             warning() << "Aborting migration due to need to swap current catalog manager"
                       << causedBy(distLockStatus);
@@ -248,7 +248,9 @@ public:
 
         // 3.
 
-        auto moveChunkStartStatus = chunkMoveState.start(shardKeyPattern);
+        const auto migrationSessionId = MigrationSessionId::generate(chunkMoveState.getFromShard(),
+                                                                     chunkMoveState.getToShard());
+        auto moveChunkStartStatus = chunkMoveState.start(migrationSessionId, shardKeyPattern);
 
         if (!moveChunkStartStatus.isOK()) {
             warning() << moveChunkStartStatus.toString();
@@ -268,6 +270,7 @@ public:
 
             BSONObjBuilder recvChunkStartBuilder;
             recvChunkStartBuilder.append("_recvChunkStart", ns);
+            migrationSessionId.append(&recvChunkStartBuilder);
             recvChunkStartBuilder.append("from", chunkMoveState.getFromShardCS().toString());
             recvChunkStartBuilder.append("fromShardName", chunkMoveState.getFromShard());
             recvChunkStartBuilder.append("toShardName", chunkMoveState.getToShard());
@@ -313,7 +316,7 @@ public:
 
         timing.done(3);
 
-        distLockStatus = distLock->checkForPendingCatalogSwap();
+        distLockStatus = distLock->checkForPendingCatalogChange();
         if (!distLockStatus.isOK()) {
             warning() << "Aborting migration due to need to swap current catalog manager"
                       << causedBy(distLockStatus);
@@ -417,7 +420,7 @@ public:
 
             txn->checkForInterrupt();
 
-            distLockStatus = distLock->checkForPendingCatalogSwap();
+            distLockStatus = distLock->checkForPendingCatalogChange();
             if (!distLockStatus.isOK()) {
                 warning() << "Aborting migration due to need to swap current catalog manager"
                           << causedBy(distLockStatus);
@@ -427,7 +430,7 @@ public:
 
         timing.done(4);
 
-        distLockStatus = distLock->checkForPendingCatalogSwap();
+        distLockStatus = distLock->checkForPendingCatalogChange();
         if (!distLockStatus.isOK()) {
             warning() << "Aborting migration due to need to swap current catalog manager"
                       << causedBy(distLockStatus);
@@ -466,7 +469,7 @@ public:
             return appendCommandStatus(result, Status(lockStatus.code(), msg));
         }
 
-        uassertStatusOK(chunkMoveState.commitMigration());
+        uassertStatusOK(chunkMoveState.commitMigration(migrationSessionId));
         timing.done(5);
 
         MONGO_FAIL_POINT_PAUSE_WHILE_SET(moveChunkHangAtStep5);
